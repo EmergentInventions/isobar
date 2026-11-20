@@ -193,7 +193,7 @@ def sc_story(i):
     else:
         # no single place: a quiet panel built from the mark's contours
         panel = Image.new("RGB", (MWd, MH), (239, 233, 222)); pd = ImageDraw.Draw(panel)
-        pd.text((MWd // 2, MH // 2 - 20), st["category"].split("·")[-1].strip().title(), font=serif(500, 110, True), fill=INK, anchor="mm")
+        pd.text((MWd // 2, MH // 2 - 20), " ".join(w if w in {"US","UK","EU","UN","AI","NATO","COP31"} else (w.capitalize() if k == 0 else w.lower()) for k, w in enumerate(st["category"].split("·")[-1].strip().split())), font=serif(500, 110, True), fill=INK, anchor="mm")
         pd.line([MWd // 2 - 40, MH // 2 + 60, MWd // 2 + 40, MH // 2 + 60], fill=ACC, width=3)
         pd.text((MWd // 2, MH // 2 + 110), f"{st['sources']} OUTLETS", font=sans("SemiBold", 20), fill=SOFT, anchor="mm")
         msk = Image.new("L", (MWd, MH), 0); ImageDraw.Draw(msk).rounded_rectangle([0, 0, MWd - 1, MH - 1], 6, fill=255)
