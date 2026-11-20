@@ -67,9 +67,19 @@ def shorten(t, n=92):
     return t if len(t) <= n else t[: t.rfind(" ", 0, n)] + "…"
 
 
+def trim_words(text, limit=120):
+    out, n = [], 0
+    for sent in sentences(text) or [text]:
+        w = len(sent.split())
+        if out and n + w > limit:
+            break
+        out.append(sent); n += w
+    return " ".join(out)
+
+
 def auto_story(s, label_cat):
     facts = [shorten(p) for p in s.get("points", [])][:3] or [shorten(x) for x in sentences(s["summary"])][:3]
-    return {"headline": s["title"], "facts": facts, "narration": s["summary"], "category": label_cat,
+    return {"headline": s["title"], "facts": facts, "narration": trim_words(s["summary"]), "category": label_cat,
             "place": s.get("location")}
 
 

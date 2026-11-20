@@ -38,4 +38,4 @@ jobs:
         if: env.DONE != '1'
         run: |
           git config user.name "isobar-bot"; git config user.email "bot@isobar.news"
-          git add "editions/$DATE"; git commit -m "Edition $DATE: stories and draft script" && git push
+          git add "editions/$DATE"; git commit -m "Edition $DATE: stories and draft script" && { git pull --rebase -q && git push; }

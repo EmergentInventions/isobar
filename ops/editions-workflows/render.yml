@@ -62,4 +62,4 @@ jobs:
       - name: Commit script updates
         run: |
           git config user.name "isobar-bot"; git config user.email "bot@isobar.news"
-          git add editions/$DATE/script.json editions/$DATE/recording.md editions/$DATE/description.txt && git commit -m "Edition $DATE: $KIND rendered" && git push || true
+          git add editions/$DATE/script.json editions/$DATE/recording.md editions/$DATE/description.txt && git commit -m "Edition $DATE: $KIND rendered" && { git pull --rebase -q && git push; } || true
