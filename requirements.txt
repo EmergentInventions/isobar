@@ -1,0 +1,9 @@
+requests>=2.31
+feedparser>=6.0
+numpy>=1.26
+scikit-learn>=1.4
+pillow>=10.0
+matplotlib>=3.8
+basemap>=1.4
+geonamescache>=2.0
+num2words>=0.5.13
