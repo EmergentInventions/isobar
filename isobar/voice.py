@@ -1,4 +1,4 @@
-"""Turn the host's single recorded take into per-scene audio.
+"""Turn the host's single recorded take into per-scene audio (after cleaning: see clean.py).
 
 Record the whole recording script in one take, leaving a clear pause (about two seconds)
 between sections where the script says [PAUSE]. We find the longest pauses and cut there.
@@ -12,13 +12,20 @@ from .tts_draft import scenes, dur
 
 def recording_script(ed):
     sc = scenes(json.load(open(ed / "script.json")))
-    lines = ["# Isobar recording script", "", "Read in one take. Pause for about two seconds at every [PAUSE].", ""]
+    lines = ["# Isobar recording script", "",
+             "Read in one take. Pause for about two seconds at every [PAUSE]. Do not read the bold labels.",
+             "If you stumble or get interrupted, stop for a moment (under a second) and start that sentence again.",
+             "Background noise and the stumbled attempt are removed automatically.", ""]
     for n, t in sc:
         lines += [f"**{n}**", "", t, "", "[PAUSE]", ""]
     (ed / "recording.md").write_text("\n".join(lines))
 
 
 def split(ed, take):
+    from .clean import clean
+    cleaned = ed / "voice_clean.wav"
+    clean(take, cleaned)
+    take = cleaned
     sc = scenes(json.load(open(ed / "script.json")))
     need = len(sc) - 1
     log = subprocess.run(["ffmpeg", "-i", str(take), "-af", "silencedetect=n=-38dB:d=0.9", "-f", "null", "-"],

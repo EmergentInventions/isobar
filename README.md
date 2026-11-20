@@ -28,7 +28,7 @@ The code for each step: [`isobar/rank.py`](isobar/rank.py) (the selection rule),
 | if no batch by 12:45 | `fetch_backup.py` reads outlets' own feeds and clusters the stories itself |
 | then | `rank.py` and `script.py` build an automatic draft |
 | then | the editorial step picks Below the Radar and rewrites for the voice (`ops/EDITORIAL.md`) |
-| then | a draft video renders; the host records one take; the final video renders |
+| then | a draft video renders; the host records one take; noise and stumbled sentences are removed (`clean.py`); the final video renders |
 | 14:00 | publish |
 
 Daily editions (stories, scripts, videos) are kept in a separate private repository.
