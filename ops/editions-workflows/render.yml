@@ -8,7 +8,9 @@ on:
     inputs:
       date: { description: "YYYY-MM-DD (UTC)", required: false }
       kind: { description: "draft or final", required: false, default: draft }
-concurrency: { group: render-${{ github.ref }}, cancel-in-progress: true }
+concurrency:
+  group: render
+  cancel-in-progress: true
 permissions: { contents: write }
 jobs:
   render:
@@ -50,7 +52,8 @@ jobs:
             python -m isobar.description "$ED" --audio audio_draft
           fi
       - name: Publish to release
-        env: { GH_TOKEN: "${{ github.token }}" }
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           ED="editions/$DATE"
           gh release view "$DATE" >/dev/null 2>&1 || gh release create "$DATE" -t "Isobar $DATE" -n "Draft, recording script and description"
