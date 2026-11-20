@@ -3,7 +3,7 @@
 1. Count distinct outlets per story (aggregators and platforms excluded).
 2. Merge stories that are clearly the same event (similar text, same place).
 3. Most covered: the 7 World/USA stories with the most outlets, at most 2 per country.
-4. Below the Radar: 3 stories with fewer outlets, picked for impact (editorial step,
+4. Below the Radar: 3 stories with at most half the 7th story's outlets (and at most 12), picked for impact (editorial step,
    with the reason shown on screen). The default pick here is a fallback only.
 """
 import argparse
@@ -15,7 +15,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from .common import edition_dir, load, save, today_utc, unique_outlets
 
-TOP_N, RADAR_N, PER_COUNTRY = 7, 3, 2
+TOP_N, RADAR_N, PER_COUNTRY, RADAR_MAX = 7, 3, 2, 12
 TOP_CATS = {"world", "usa"}
 MERGE_SIM = 0.42
 
@@ -38,8 +38,10 @@ def merge_duplicates(stories):
         for j in order:
             if j == i or j in absorbed:
                 continue
-            same_place = country(s.get("location")) and country(s.get("location")) == country(stories[j].get("location"))
-            if sim[i, j] >= MERGE_SIM and (same_place or sim[i, j] >= 0.6):
+            loc_i, loc_j = (s.get("location") or "").lower(), (stories[j].get("location") or "").lower()
+            same_city = bool(loc_i) and loc_i == loc_j
+            same_place = country(loc_i) and country(loc_i) == country(loc_j)
+            if (same_city and sim[i, j] >= 0.22) or (sim[i, j] >= MERGE_SIM and (same_place or sim[i, j] >= 0.6)):
                 o = stories[j]
                 s["domains"] = sorted(set(s["domains"]) | set(o["domains"]))
                 s["points"] = s.get("points", []) + [p for p in o.get("points", []) if p not in s.get("points", [])]
@@ -66,7 +68,8 @@ def select(stories):
             break
     floor = min(s["outlet_count"] for s in top) if top else 0
     taken = {s["id"] for s in top}
-    pool = [s for s in stories if s["id"] not in taken and 3 <= s["outlet_count"] < max(floor, 4)][:20]
+    ceiling = max(4, min(RADAR_MAX, floor // 2))
+    pool = [s for s in stories if s["id"] not in taken and 3 <= s["outlet_count"] <= ceiling][:25]
     default, seen = [], set()
     for s in pool:  # fallback: one per category, most covered first
         if s["category"] not in seen:

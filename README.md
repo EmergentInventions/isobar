@@ -12,7 +12,7 @@ This repository is the whole pipeline, in the open, so anyone can check how stor
 2. **Merge duplicates.** Reports that are clearly about the same event are counted once.
 3. **Most covered (7 stories).** The World and USA stories with the most outlets, at most two per country.
    The count is shown on screen for every story.
-4. **Below the Radar (3 stories).** Stories with less coverage, picked for impact using a published rubric:
+4. **Below the Radar (3 stories).** Stories with at most half the coverage of the seventh story (and no more than 12 outlets), picked for impact using a published rubric:
    people affected, durability, precedent, and whether a primary source exists. The reason for each pick is
    shown on screen. Rules: [`ops/EDITORIAL.md`](ops/EDITORIAL.md).
 
