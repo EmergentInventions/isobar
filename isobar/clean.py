@@ -48,7 +48,11 @@ def transcribe(wav):
         print("clean: faster-whisper not installed, skipping retakes and speech gate")
         return None
     model = WhisperModel(os.environ.get("WHISPER_MODEL", "base.en"), device="cpu", compute_type="int8")
-    segs, _ = model.transcribe(str(wav), word_timestamps=True, condition_on_previous_text=False, beam_size=5)
+    from scipy.signal import resample_poly
+    sr, x = wavfile.read(wav)  # pass samples directly (avoids PyAV version issues)
+    x = x.astype(np.float32) / 32768.0
+    audio16 = resample_poly(x, 1, sr // 16000).astype(np.float32)
+    segs, _ = model.transcribe(audio16, word_timestamps=True, condition_on_previous_text=False, beam_size=5)
     out = []
     for s in segs:
         words = [(w.start, w.end, w.word.strip()) for w in (s.words or []) if w.word.strip()]
