@@ -62,22 +62,35 @@ def transcribe(wav):
     return out
 
 
-def norm(words):
-    return [re.sub(r"[^a-z0-9']", "", w.lower()) for _, _, w in words if re.sub(r"[^a-z0-9']", "", w.lower())]
-
-
 def find_retakes(segs):
-    """A segment is a fluffed attempt if the next segment restarts the same words."""
-    drop = []
-    for a, b in zip(segs, segs[1:]):
-        wa, wb = norm(a["words"]), norm(b["words"])
-        if not wa or not wb:
-            continue
-        k = min(6, len(wa), len(wb))
-        head_same = wa[:min(4, k)] == wb[:min(4, k)]
-        ratio = difflib.SequenceMatcher(None, " ".join(wa[:k]), " ".join(wb[:k])).ratio()
-        if (head_same or ratio >= 0.85) and len(wa) <= len(wb) + 2:
-            drop.append((a["start"], b["start"]))
+    """A restart: you stop briefly, then say again what you had just said, from its first word.
+    So the stumbled attempt w[i:j] is (mostly) a prefix of what follows w[j:], there is a short
+    stop before w[j], and the stumble is at most 15 words long."""
+    w = []
+    for sg in segs:
+        for st, en, raw in sg["words"]:
+            n = re.sub(r"[^a-z0-9']", "", raw.lower())
+            if n:
+                w.append((st, en, n, raw.strip()))
+    drop, i = [], 0
+    while i < len(w) - 3:
+        hit = None
+        for j in range(i + 2, min(i + 16, len(w) - 2)):
+            if w[j][0] - w[j - 1][1] < 0.25:          # no stop before the restart
+                continue
+            L = j - i
+            m = 0
+            while j + m < len(w) and i + m < j and w[i + m][2] == w[j + m][2]:
+                m += 1
+            finished = w[j - 1][3][-1:] in ".?!"   # first attempt was a complete sentence
+            if m >= 3 and m >= 0.6 * L and not (finished and m < L):
+                hit = j
+                break
+        if hit is not None:
+            drop.append((w[i][0], w[hit][0]))
+            i = hit
+        else:
+            i += 1
     return drop
 
 

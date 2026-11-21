@@ -63,6 +63,7 @@ jobs:
           gh release view "$DATE" >/dev/null 2>&1 || gh release create "$DATE" -t "Isobar $DATE" -n "Draft, recording script and description"
           gh release upload "$DATE" $ED/isobar-$DATE*.mp4 $ED/recording.md --clobber
           [ -f "$ED/description.txt" ] && gh release upload "$DATE" "$ED/description.txt" --clobber || true
+          [ -f "$ED/voice_clean.words.json" ] && gh release upload "$DATE" "$ED/voice_clean.words.json" --clobber || true
       - name: Commit script updates
         run: |
           git config user.name "isobar-bot"; git config user.email "bot@isobar.news"
