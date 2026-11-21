@@ -39,6 +39,8 @@ Use only facts present in that story's `summary`, `points` and `headlines`. Neve
 Then: `git add editions/<DATE>/editorial.json && git commit -m "Edition <DATE>: editorial" && git push`.
 
 ## 4. Pronunciation check (the AI voice)
+Follow `ops/PRONUNCIATION.md` (pronunciation house style). Also scan the narrations for heteronyms listed there
+(live, read, lead, close, minute, ...) and rephrase or add a phrase entry if the voice could pick the wrong one.
 The draft voice reads `pronunciations.json` at the root of `isobar-editions`. After writing editorial.json,
 list the names and unusual words in today's 10 narrations (people, places, organisations, acronyms read as words).
 For each one not already in the file, check how espeak says it:

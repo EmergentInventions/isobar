@@ -58,24 +58,85 @@ ABBREV = [(r"\bJr\b\.?", "Junior"), (r"\bSr\b\.?", "Senior"),
           (r"\bSgt\.(?= [A-Z])", "Sergeant"), (r"\bCapt\.(?= [A-Z])", "Captain"), (r"\bProf\.(?= [A-Z])", "Professor")]
 
 
+# Heteronyms espeak guesses wrong without grammar: (pattern, phonemes) applied as fixed pronunciations.
+# "live" is the verb (lɪv) in lists like "live, work or study" and before in/on/with/abroad/together;
+# the adjective (laɪv) is left to espeak ("live broadcast", "live music").
+HETERONYMS = [(r"\b(live)(?=,| or | and | in | on | with | abroad| together| here| there| longer)", "lɪv"),
+              (r"\b(?:to|who|they|we|you|can|could|would|will|people|families|residents)\s+(live)\b", "lɪv")]
+
+
+CUR = {"£": ("pound", "pounds"), "$": ("dollar", "dollars"), "€": ("euro", "euros")}
+SCALE = {"k": "thousand", "m": "million", "bn": "billion", "tn": "trillion",
+         "thousand": "thousand", "million": "million", "billion": "billion", "trillion": "trillion"}
+MONEY = re.compile(r"([£$€])(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?:\s?(k|m|bn|tn|thousand|million|billion|trillion)\b)?")
+# Initialisms said as words; every other run of 2-6 capitals is spelled out letter by letter.
+WORD_ACRONYMS = {"NATO", "NASA", "OPEC", "UNESCO", "UNICEF", "COVID", "FIFA", "UEFA", "ASEAN", "AWACS", "ISIS",
+                 "CERN", "NAFTA", "SWIFT", "AIDS", "OFCOM", "OFGEM", "OFSTED", "FTSE", "NASDAQ", "BRICS", "SARS", "MERS",
+                 "UKIP", "ACAS", "SATS", "GCSE", "SCOTUS", "POTUS"} - {"GCSE"}
+LETTER = dict(A="eɪ", B="biː", C="siː", D="diː", E="iː", F="ɛf", G="dʒiː", H="eɪtʃ", I="aɪ", J="dʒeɪ", K="keɪ", L="ɛl",
+              M="ɛm", N="ɛn", O="əʊ", P="piː", Q="kjuː", R="ɑː", S="ɛs", T="tiː", U="juː", V="viː", W="dˈʌbəljuː",
+              X="ɛks", Y="waɪ", Z="zɛd")
+
+
+def spell(word):
+    """'IMF' -> ˌaɪˌɛmˈɛf: letter names, main stress on the last letter, as a newsreader says it."""
+    parts = [LETTER[c].replace("ˈ", "") for c in word]
+    return "".join("ˌ" + p for p in parts[:-1]) + "ˈ" + parts[-1]
+
+
+def say_money(m):
+    from num2words import num2words as _n2w
+    num2words = lambda *a, **k: _n2w(*a, **k).replace(",", "")
+    sym, num, scale = m.group(1), m.group(2).replace(",", ""), m.group(3)
+    one, many = CUR[sym]
+    if scale:
+        return f"{num2words(float(num) if '.' in num else int(num), lang='en_GB')} {SCALE[scale]} {many}"
+    if "." in num:
+        whole, frac = num.split(".", 1)
+        w = num2words(int(whole), lang="en_GB")
+        unit = one if whole == "1" else many
+        return f"{w} {unit} {num2words(int(frac), lang='en_GB')}" if int(frac) else f"{w} {unit}"
+    return f"{num2words(int(num), lang='en_GB')} {one if num == '1' else many}"
+
+
 def expand(text):
     for pat, rep in ABBREV:
         text = re.sub(pat, rep, text)
+    text = MONEY.sub(say_money, text)
+    text = re.sub(r"\b1p\b", "one penny", text)
+    text = re.sub(r"\b(\d+)p\b", r"\1 pence", text)
     return speak_years(text)
+
+
+def heteronyms(text):
+    """Mark heteronyms with a private-use placeholder the phonemiser passes through as fixed phonemes."""
+    fixed = []
+    for pat, ph in HETERONYMS:
+        def sub(m, ph=ph):  # replace only the captured word, keep any context the pattern matched
+            fixed.append(ph); w = m.group(0); a, b = m.start(1) - m.start(0), m.end(1) - m.start(0)
+            return w[:a] + f"\uE000{len(fixed) - 1}\uE001" + w[b:]
+        text = re.sub(pat, sub, text, flags=re.I)
+    return text, fixed
 
 
 def to_phonemes(k, text, lex):
     """espeak (en-gb) phonemes, with listed words replaced by their fixed pronunciation."""
-    text = expand(text)
-    if not lex:
-        return k.tokenizer.phonemize(text, "en-gb")
+    text, fixed = heteronyms(expand(text))
     keys = sorted(lex, key=len, reverse=True)
-    rx = re.compile(r"(?<![\w-])(" + "|".join(map(re.escape, keys)) + r")('s|’s)?(?![\w-])")
+    lexalt = (r"(?<![\w&-])(" + "|".join(map(re.escape, keys)) + r")('s|’s)?(?![\w&-])") if keys else r"(?!x)x()()"
+    rx = re.compile(r"\uE000(\d+)\uE001|" + lexalt + r"|(?<![\w&-])([A-Z]{2,6})(s|'s|’s)?(?![\w&-])")
     out, pos = [], 0
     for m in rx.finditer(text):
         if text[pos:m.start()].strip():
             out.append(k.tokenizer.phonemize(text[pos:m.start()], "en-gb"))
-        out.append(lex[m.group(1)] + ("z" if m.group(2) else ""))
+        if m.group(1) is not None:
+            out.append(fixed[int(m.group(1))])
+        elif m.group(2) is not None:
+            out.append(lex[m.group(2)] + ("z" if m.group(3) else ""))
+        elif m.group(4).upper() in WORD_ACRONYMS:
+            out.append(k.tokenizer.phonemize(m.group(0), "en-gb"))
+        else:
+            out.append(spell(m.group(4)) + ("z" if m.group(5) else ""))
         pos = m.end()
     if text[pos:].strip():
         out.append(k.tokenizer.phonemize(text[pos:], "en-gb"))
