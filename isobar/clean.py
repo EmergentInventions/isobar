@@ -42,57 +42,72 @@ def denoise(wav, out):
     print("clean: denoised with DeepFilterNet")
 
 
+PROMPT = "Umm, so, uh, the the president- the president said, um, that- that it was, uh, it was fine."
+LONG_WORD = 0.9      # a word timed longer than this usually hides a restart Whisper skipped
+
+
+def _words(model, audio16, offset=0.0, prompt=PROMPT):
+    segs, _ = model.transcribe(audio16, language="en", word_timestamps=True, beam_size=5,
+                               condition_on_previous_text=False, initial_prompt=prompt)
+    return [(w.start + offset, w.end + offset, w.word) for s in segs for w in s.words]
+
+
+def _refine(model, audio16, words):
+    """Re-transcribe a short clip around each over-long word. On a clip of a few seconds Whisper
+    usually writes out both attempts instead of smoothing one away."""
+    out, k, fixed = [], 0, 0
+    while k < len(words):
+        if words[k][1] - words[k][0] <= LONG_WORD:
+            out.append(words[k]); k += 1; continue
+        a_i, b_i = max(0, k - 3), min(len(words), k + 4)
+        while b_i < len(words) and words[b_i][1] - words[b_i][0] > LONG_WORD:
+            b_i = min(len(words), b_i + 3)
+        a, b = words[a_i][0], words[b_i - 1][1]
+        clip = audio16[int(max(0, a - 0.1) * 16000): int((b + 0.1) * 16000)]
+        new = [w for w in _words(model, clip, max(0, a - 0.1)) if a - 0.2 <= w[0] <= b + 0.1]
+        old = words[a_i:b_i]
+        if len(new) > len(old):
+            out = [w for w in out if w[0] < a]
+            out += new; fixed += 1
+        else:
+            out += [w for w in old if not out or w[0] > out[-1][0]]
+        k = b_i
+    if fixed:
+        print(f"clean: re-checked {fixed} passages where words seemed to be missing")
+    return out
+
+
 def transcribe(wav):
     try:
         from faster_whisper import WhisperModel
     except ImportError:
         print("clean: faster-whisper not installed, skipping retakes and speech gate")
         return None
-    model = WhisperModel(os.environ.get("WHISPER_MODEL", "base.en"), device="cpu", compute_type="int8")
+    model = WhisperModel(os.environ.get("WHISPER_MODEL", "small.en"), device="cpu", compute_type="int8")
     from scipy.signal import resample_poly
     sr, x = wavfile.read(wav)  # pass samples directly (avoids PyAV version issues)
     x = x.astype(np.float32) / 32768.0
     audio16 = resample_poly(x, 1, sr // 16000).astype(np.float32)
-    segs, _ = model.transcribe(audio16, word_timestamps=True, condition_on_previous_text=False, beam_size=5)
-    out = []
-    for s in segs:
-        words = [(w.start, w.end, w.word.strip()) for w in (s.words or []) if w.word.strip()]
-        if words:
-            out.append({"start": words[0][0], "end": words[-1][1], "text": s.text.strip(), "words": words})
-    print(f"clean: transcribed {len(out)} segments")
+    words = _refine(model, audio16, _words(model, audio16))
+    # group into sentences so the rest of the pipeline keeps its segment format
+    out, cur = [], []
+    for w in words:
+        cur.append(w)
+        if w[2].strip()[-1:] in ".?!":
+            out.append(cur); cur = []
+    if cur:
+        out.append(cur)
+    out = [{"start": c[0][0], "end": c[-1][1], "text": "".join(x[2] for x in c).strip(), "words": c} for c in out]
+    print(f"clean: transcribed {len(words)} words")
     return out
 
 
-def find_retakes(segs):
-    """A restart: you stop briefly, then say again what you had just said, from its first word.
-    So the stumbled attempt w[i:j] is (mostly) a prefix of what follows w[j:], there is a short
-    stop before w[j], and the stumble is at most 15 words long."""
-    w = []
-    for sg in segs:
-        for st, en, raw in sg["words"]:
-            n = re.sub(r"[^a-z0-9']", "", raw.lower())
-            if n:
-                w.append((st, en, n, raw.strip()))
-    drop, i = [], 0
-    while i < len(w) - 3:
-        hit = None
-        for j in range(i + 2, min(i + 16, len(w) - 2)):
-            if w[j][0] - w[j - 1][1] < 0.25:          # no stop before the restart
-                continue
-            L = j - i
-            m = 0
-            while j + m < len(w) and i + m < j and w[i + m][2] == w[j + m][2]:
-                m += 1
-            finished = w[j - 1][3][-1:] in ".?!"   # first attempt was a complete sentence
-            if m >= 3 and m >= 0.6 * L and not (finished and m < L):
-                hit = j
-                break
-        if hit is not None:
-            drop.append((w[i][0], w[hit][0]))
-            i = hit
-        else:
-            i += 1
-    return drop
+def find_retakes(segs, script_text=None):
+    """Earlier attempts of a phrase you then said again. Needs the script (see retakes.py)."""
+    if not script_text:
+        return []
+    from .retakes import find
+    return find([tuple(w) for s in segs for w in s["words"]], script_text)
 
 
 def keep_mask(n, segs, drop):
@@ -110,13 +125,13 @@ def keep_mask(n, segs, drop):
     return speech
 
 
-def apply(wav, out, segs):
+def apply(wav, out, segs, script_text=None):
     sr, x = wavfile.read(wav)
     x = x.astype(np.float32)
     n = len(x)
     if not segs:
         wavfile.write(out, sr, x.astype(np.int16)); return 0.0, []
-    drop = find_retakes(segs)
+    drop = find_retakes(segs, script_text)
     gate = keep_mask(n, segs, drop).astype(np.float32)
     # 20 ms fades at every gate edge to avoid clicks
     k = int(0.08 * sr); win = np.ones(k) / k  # gentle 80 ms fades
@@ -129,8 +144,12 @@ def apply(wav, out, segs):
     wavfile.write(out, sr, np.clip(y, -32768, 32767).astype(np.int16))
     removed = (n - len(y)) / sr
     for a, b in drop:
-        print(f"clean: removed retake {a:.1f}s to {b:.1f}s")
+        print(f"clean: removed retake {a:.1f}s to {b:.1f}s: {said(segs, a, b)}")
     return removed, drop
+
+
+def said(segs, a, b):
+    return "".join(w for s in segs for st, _, w in s["words"] if a <= st < b).strip()[:80]
 
 
 def shift_words(segs, drop):
@@ -145,21 +164,26 @@ def shift_words(segs, drop):
     return out
 
 
-def clean(take, out):
+def clean(take, out, script_text=None):
     with tempfile.TemporaryDirectory() as d:
         raw, den = Path(d) / "take.wav", Path(d) / "den.wav"
         to_wav(take, raw)
         denoise(raw, den)
         segs = transcribe(den)
-        removed, drop = apply(den, out, segs)
+        removed, drop = apply(den, out, segs, script_text)
         if segs:
             json.dump(shift_words(segs, drop), open(Path(out).with_suffix(".words.json"), "w"))
     print(f"clean: wrote {out} ({removed:.1f}s of retakes removed)")
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("take"); ap.add_argument("out"); a = ap.parse_args()
-    clean(a.take, a.out)
+    ap = argparse.ArgumentParser(); ap.add_argument("take"); ap.add_argument("out")
+    ap.add_argument("--script", help="script.json, to recognise restarted phrases"); a = ap.parse_args()
+    text = None
+    if a.script:
+        from .tts_draft import scenes
+        text = " ".join(t for _, t in scenes(json.load(open(a.script))))
+    clean(a.take, a.out, text)
 
 
 if __name__ == "__main__":

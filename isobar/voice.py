@@ -14,8 +14,8 @@ def recording_script(ed):
     sc = scenes(json.load(open(ed / "script.json")))
     lines = ["# Isobar recording script", "",
              "Read in one take. Pause for about two seconds at every [PAUSE]. Do not read the bold labels.",
-             "If you stumble or get interrupted, stop for a moment (under a second) and start that sentence again.",
-             "Background noise and the stumbled attempt are removed automatically.", ""]
+             "If you stumble or get interrupted, go back a few words (or to the start of the sentence) and carry on.",
+             "Background noise and the stumbled attempt are removed automatically: the last attempt is kept.", ""]
     for n, t in sc:
         lines += [f"**{n}**", "", t, "", "[PAUSE]", ""]
     (ed / "recording.md").write_text("\n".join(lines))
@@ -24,7 +24,7 @@ def recording_script(ed):
 def split(ed, take):
     from .clean import clean
     cleaned = ed / "voice_clean.wav"
-    clean(take, cleaned)
+    clean(take, cleaned, " ".join(t for _, t in scenes(json.load(open(ed / "script.json")))))
     take = cleaned
     sc = scenes(json.load(open(ed / "script.json")))
     need = len(sc) - 1
