@@ -44,4 +44,4 @@ For each one not already in the file, check how espeak says it:
 (download the two model files from https://github.com/thewh1teagle/kokoro-onnx/releases/tag/model-files-v1.0 into ~/.cache/kokoro if missing).
 If it is wrong for a British news reader (wrong stress, Anglicised foreign names, letters read as a word), add
 `"Name": "phonemes"` in the same IPA style. Use the established English pronunciation where one exists
-(Xi = ʃˈiː, Pentagon = pˈɛntəɡɒn). Keep entries; never delete one without a reason. Commit it with editorial.json.
+(Xi = ʃˈiː, Pentagon = pˈɛntəɡɒn). Prefer the short "a" for Arabic names (Riyadh = ɹiːjˈad): "ɑː" sounds like "ar". Years are converted automatically (2030 = "twenty thirty"). Keep entries; never delete one without a reason. Commit it with editorial.json.

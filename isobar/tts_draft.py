@@ -42,8 +42,18 @@ def lexicon(ed):
     return lex
 
 
+YEAR = re.compile(r"(?<![\d$£€.,])(1[1-9]\d\d|20\d\d)(?![\d%]|,\d|\.\d| per ?cent)")
+
+
+def speak_years(text):
+    """Years as people say them: 2030 -> 'twenty thirty', 1990 -> 'nineteen ninety', 2005 -> 'two thousand and five'."""
+    from num2words import num2words
+    return YEAR.sub(lambda m: num2words(int(m.group(1)), to="year", lang="en_GB"), text)
+
+
 def to_phonemes(k, text, lex):
     """espeak (en-gb) phonemes, with listed words replaced by their fixed pronunciation."""
+    text = speak_years(text)
     if not lex:
         return k.tokenizer.phonemize(text, "en-gb")
     keys = sorted(lex, key=len, reverse=True)
