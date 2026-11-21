@@ -44,6 +44,9 @@ def denoise(wav, out):
 
 # Fillers only: Whisper copies the verbatim style, and anything that leaks is a filler we ignore
 PROMPT = "Um, uh, er- erm, uh- um. Hmm, uh, um- er."
+# A second pass with a fuller example finds more restarts but can invent words, so its cuts
+# are only used when the first transcript confirms them (see retakes.confirmed)
+PROMPT2 = "Umm, so, uh, the the president- the president said, um, that- that it was, uh, it was fine."
 LONG_WORD = 0.9      # a word timed longer than this usually hides a restart Whisper skipped
 
 
@@ -53,7 +56,7 @@ def _words(model, audio16, offset=0.0, prompt=PROMPT):
     return [(w.start + offset, w.end + offset, w.word) for s in segs for w in s.words]
 
 
-def _refine(model, audio16, words):
+def _refine(model, audio16, words, prompt=PROMPT):
     """Re-transcribe a short clip around each over-long word. On a clip of a few seconds Whisper
     usually writes out both attempts instead of smoothing one away."""
     out, k, fixed = [], 0, 0
@@ -65,7 +68,7 @@ def _refine(model, audio16, words):
             b_i = min(len(words), b_i + 3)
         a, b = words[a_i][0], words[b_i - 1][1]
         clip = audio16[int(max(0, a - 0.1) * 16000): int((b + 0.1) * 16000)]
-        new = [w for w in _words(model, clip, max(0, a - 0.1)) if a - 0.2 <= w[0] <= b + 0.1]
+        new = [w for w in _words(model, clip, max(0, a - 0.1), prompt) if a - 0.2 <= w[0] <= b + 0.1]
         old = words[a_i:b_i]
         if len(new) > len(old):
             out = [w for w in out if w[0] < a]
@@ -90,6 +93,9 @@ def transcribe(wav):
     x = x.astype(np.float32) / 32768.0
     audio16 = resample_poly(x, 1, sr // 16000).astype(np.float32)
     words = _refine(model, audio16, _words(model, audio16))
+    second = None
+    if os.environ.get("ISOBAR_SECOND_PASS", "1") == "1":
+        second = _refine(model, audio16, _words(model, audio16, prompt=PROMPT2), PROMPT2)
     # group into sentences so the rest of the pipeline keeps its segment format
     out, cur = [], []
     for w in words:
@@ -100,6 +106,8 @@ def transcribe(wav):
         out.append(cur)
     out = [{"start": c[0][0], "end": c[-1][1], "text": "".join(x[2] for x in c).strip(), "words": c} for c in out]
     print(f"clean: transcribed {len(words)} words")
+    if second:
+        out[0]["second_pass"] = second
     return out
 
 
@@ -107,8 +115,13 @@ def find_retakes(segs, script_text=None):
     """Earlier attempts of a phrase you then said again. Needs the script (see retakes.py)."""
     if not script_text:
         return []
-    from .retakes import find
-    return find([tuple(w) for s in segs for w in s["words"]], script_text)
+    from .retakes import find, confirmed
+    words = [tuple(w) for s in segs for w in s["words"]]
+    drops = find(words, script_text)
+    second = segs[0].get("second_pass") if segs else None
+    if second:
+        drops += find([tuple(w) for w in second], script_text)
+    return confirmed(drops, words, script_text)
 
 
 def keep_mask(n, segs, drop):
