@@ -36,7 +36,7 @@ Daily editions (stories, scripts, videos) are kept in a separate private reposit
 ## Run it yourself
 
 ```bash
-pip install -r requirements.txt            # plus ffmpeg; festival + festvox-us-slt-hts for the draft voice
+pip install -r requirements.txt            # plus ffmpeg; the draft voice is Kokoro (downloads ~350 MB on first run; Festival is the fallback)
 python -m isobar.fetch_kagi --base out     # or: python -m isobar.fetch_backup --base out
 python -m isobar.rank --base out
 python -m isobar.script --base out

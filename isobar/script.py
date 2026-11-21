@@ -16,8 +16,14 @@ from num2words import num2words
 
 from .common import ROOT, edition_dir, load, save, today_utc
 
-ORD = ["Our top story", "Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh"]
-RAD = ["First", "Second", "And third"]
+# Spoken leads, kept varied so the count doesn't sound like a list being read out.
+ORD = ["Our top story today was reported by {n} outlets.", "The second most covered story, with {n} outlets.",
+       "Third, with {n} outlets.", "In fourth place, {n} outlets.", "Fifth, reported by {n} outlets.",
+       "Sixth, with {n} outlets.", "And seventh, with {n} outlets."]
+ORD_SAME = ["", "Also with {n} outlets.", "Third, also with {n} outlets.", "Fourth, also on {n} outlets.",
+            "Fifth, again with {n} outlets.", "Sixth, also with {n} outlets.", "And seventh, also with {n} outlets."]
+RAD = ["The first was reported by {just}{n} outlets.", "Next, a story carried by {just}{n} outlets.",
+       "And finally, from {just}{n} outlets."]
 FEATURE = ["BBC", "The New York Times", "The Guardian", "Financial Times", "Al Jazeera", "Le Monde", "Der Spiegel",
            "El País", "France 24", "DW", "South China Morning Post", "The Hindu", "NBC News", "CBS News", "PBS",
            "Scientific American", "Science", "The Kyiv Independent", "Dawn", "Euronews", "Reuters", "AP News"]
@@ -94,16 +100,17 @@ def build(d, date, strapline=None):
         e = {**auto_story(s, s["category"].upper()), **ed.get("stories", {}).get(s["id"], {})}
         n = s["outlet_count"]
         if seg == "top":
-            lead = f"{ORD[k]}, covered by {words(n)} outlets. "
+            same = k > 0 and chosen[k - 1][0]["outlet_count"] == n
+            lead = (ORD_SAME if same else ORD)[k].format(n=words(n)) + " "
             cat = e["category"].upper()
         else:
             j = k - len(c["top"])
-            lead = f"{RAD[j]}, reported by {'just ' if n < 6 else ''}{words(n)} outlets. "
+            lead = RAD[j].format(n=words(n), just="just " if n < 6 else "") + " "
             cat = "BELOW THE RADAR · " + e["category"].upper().replace("BELOW THE RADAR · ", "")
         lat, lon = geocode(e.get("place"))
         stories.append({
             "id": s["id"], "segment": seg, "category": cat, "headline": e["headline"], "facts": e["facts"][:3],
-            "narration": e["narration"] if e["narration"].startswith(lead.split(",")[0]) else lead + e["narration"],
+            "narration": e["narration"] if e["narration"].startswith(lead.split(",")[0].split(" ")[0] + " ") and "outlets" in e["narration"][:80] else lead + e["narration"],
             "place": e.get("place") if lat is not None else None, "lat": lat, "lon": lon,
             "sources": n, "outlets": s["outlets"], "outlet_line": feature_line(s["outlets"], n),
             "why": why or e.get("why") or "",
@@ -114,21 +121,20 @@ def build(d, date, strapline=None):
     spoken = f"{day:%A} the {num2words(day.day, to='ordinal')} of {day:%B}"
     n_all = len(all_outlets)
     script = {
-        "show": "Isobar", "date": nice, "strapline": strapline, "source": c["source"],
+        "show": "Isobar.News", "date": nice, "strapline": strapline, "source": c["source"],
         "intro": {"narration": ed.get("intro") or (
-            f"This is Isobar for {spoken}. {words(len(stories)).capitalize()} stories. First, the seven most covered by "
-            "outlets around the world, ranked by that count. Then three below the radar: less coverage, picked for "
-            "impact. The reasons are on screen. Here is the news.")},
-        "radar_bumper": ed.get("radar_bumper") or ("Now, below the radar. Three stories with less coverage, chosen "
-                                                   "for their impact on people's lives. The reason each one made the cut is on screen."),
+            f"This is Isobar News for {spoken}. We start with the seven stories that news outlets around the world "
+            "covered most today, and then three that got far less attention, but could matter just as much. "
+            "Here's the news.")},
+        "radar_bumper": ed.get("radar_bumper") or ("Now, three stories from below the radar. They got much less "
+                                                   "coverage, but each could make a real difference to people's lives."),
         "outro": {"narration": ed.get("outro") or (
-            f"That's Isobar for today. This edition drew on reporting from {words(n_all)} outlets around the world. "
-            "Every source count, and every reason for a pick, is on screen, so you can judge the selection for "
-            "yourself. Back tomorrow, once, at the same time.")},
+            f"That's Isobar News for today. We drew on reporting from {words(n_all)} outlets around the world. "
+            "Thanks for watching, and see you tomorrow.")},
         "stories": stories,
         "all_outlets": sorted(all_outlets, key=lambda x: re.sub(r"^(The|Le|La|El|Der) ", "", x).lower()),
         "credit": ("Story clustering and summaries adapted from Kagi News · CC BY-NC 4.0" if c["source"] == "kagi"
-                   else "Stories clustered by Isobar from outlets' public feeds"),
+                   else "Stories clustered by Isobar News from outlets' public feeds"),
     }
     return script
 

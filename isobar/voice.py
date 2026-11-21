@@ -12,7 +12,7 @@ from .tts_draft import scenes, dur
 
 def recording_script(ed):
     sc = scenes(json.load(open(ed / "script.json")))
-    lines = ["# Isobar recording script", "",
+    lines = ["# Isobar News recording script", "",
              "Read in one take. Pause for about two seconds at every [PAUSE]. Do not read the bold labels.",
              "If you stumble or get interrupted, go back a few words (or to the start of the sentence) and carry on.",
              "Background noise and the stumbled attempt are removed automatically: the last attempt is kept.", ""]

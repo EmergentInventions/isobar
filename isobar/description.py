@@ -15,7 +15,7 @@ def main():
     for k, v in L.items():
         at[k] = t; t += v
     ntop = sum(1 for x in s["stories"] if x["segment"] == "top")
-    out = [f"Isobar | {s['date']}", "", "Chapters", "0:00 Today's stories"]
+    out = [f"Isobar News | {s['date']}", "", "Chapters", "0:00 Today's stories"]
     for i, st in enumerate(s["stories"]):
         if i == ntop and "08a_radar" in at:
             out.append(f"{mmss(at['08a_radar'])} Below the Radar")
@@ -25,7 +25,7 @@ def main():
             f"This edition drew on reporting from {len(s['all_outlets'])} outlets:", ", ".join(s["all_outlets"]), ""]
     if s.get("source") == "kagi":
         out.append("Attribution: story clustering and summaries adapted from Kagi News (https://news.kagi.com), licensed under "
-                   "CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Isobar has edited, re-ranked and rewritten the material for video.")
+                   "CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Isobar News has edited, re-ranked and rewritten the material for video.")
     (ed / "description.txt").write_text("\n".join(out) + "\n")
     print("description written")
 

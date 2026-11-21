@@ -51,10 +51,23 @@ def _paper():
 PAPER_ARR = _paper()
 def paper(): return Image.fromarray(PAPER_ARR.copy())
 
+def wordmark(im, xy, size, alpha=1.0):
+    """'Isobar' in ink, '.News' in the accent colour: the domain is part of the mark."""
+    name, dot = (S["show"].split(".", 1) + [""])[:2]
+    f = serif(600, size); x, y = xy
+    for part, col in ((name, INK), ("." + dot if dot else "", ACC)):
+        if not part: continue
+        w = int(ImageDraw.Draw(Image.new("L", (1, 1))).textlength(part, font=f)) + 4
+        m = Image.new("L", (w, int(size * 1.4)), 0)
+        ImageDraw.Draw(m).text((0, int(size * 1.05)), part, font=f, fill=int(255 * alpha), anchor="ls")
+        im.paste(Image.new("RGB", m.size, col), (int(x), int(y - size * 1.05)), m)
+        x += w - 4
+    return x - xy[0]
+
 def masthead(im, counter=None):
     d = ImageDraw.Draw(im)
     m = mark(44); im.paste(m, (90, 26), m)
-    d.text((148, 66), S["show"], font=serif(600, 50), fill=INK, anchor="ls")
+    wordmark(im, (148, 66), 50)
     d.text((W - 90, 60), S["date"], font=sans("Medium", 22), fill=SOFT, anchor="rs")
     if counter:
         dw = d.textlength(S["date"], font=sans("Medium", 22))
@@ -104,13 +117,14 @@ def sc_sting():
         t = k / FPS; im = paper(); d = ImageDraw.Draw(im)
         a = min(1, max(0, (t - 0.15) / 0.7)); e = 1 - (1 - a) ** 3
         sz = int(220 * (0.88 + 0.12 * e))
+        TS = 170; tw = ImageDraw.Draw(Image.new("L", (1, 1))).textlength(S["show"], font=serif(600, TS))
+        x0 = int(W // 2 - (220 + 50 + tw) / 2)          # centre mark + wordmark as one group
         if a > 0:
             m = mark(sz); al = m.split()[3].point(lambda v: int(v * a)); m.putalpha(al)
-            im.paste(m, (W // 2 - 260 - sz // 2, H // 2 - sz // 2), m)
+            im.paste(m, (x0 + 110 - sz // 2, H // 2 - sz // 2), m)
         b = min(1, max(0, (t - 0.7) / 0.6))
         if b > 0:
-            txt = Image.new("L", (700, 220), 0); ImageDraw.Draw(txt).text((0, 160), S["show"], font=serif(600, 190), fill=int(255 * b), anchor="ls")
-            im.paste(Image.new("RGB", txt.size, INK), (W // 2 - 110, H // 2 - 130), txt)
+            wordmark(im, (x0 + 270, H // 2 + 50), TS, alpha=b)
         c = min(1, max(0, (t - 1.4) / 0.6))
         if c > 0 and S.get("strapline"):
             txt = Image.new("L", (900, 60), 0); ImageDraw.Draw(txt).text((450, 30), S["strapline"], font=sans("Regular", 30), fill=int(255 * c), anchor="mm")

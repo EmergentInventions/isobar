@@ -7,3 +7,5 @@ matplotlib>=3.8
 basemap>=1.4
 geonamescache>=2.0
 num2words>=0.5.13
+kokoro-onnx>=0.4
+soundfile>=0.12
