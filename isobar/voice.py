@@ -28,19 +28,39 @@ def split(ed, take):
     take = cleaned
     sc = scenes(json.load(open(ed / "script.json")))
     need = len(sc) - 1
-    log = subprocess.run(["ffmpeg", "-i", str(take), "-af", "silencedetect=n=-38dB:d=0.9", "-f", "null", "-"],
-                         capture_output=True, text=True).stderr
-    starts = [float(x) for x in re.findall(r"silence_start: ([\d.]+)", log)]
-    ends = [float(x) for x in re.findall(r"silence_end: ([\d.]+)", log)]
-    gaps = sorted(zip(starts, ends), key=lambda g: g[1] - g[0], reverse=True)
     total = dur(take)
-    gaps = sorted([g for g in gaps if g[0] > 0.3 and g[1] < total - 0.25][:need])
-    if len(gaps) < need:
-        raise SystemExit(f"found {len(gaps)} pauses but need {need}: re-record with clearer pauses at each [PAUSE]")
-    # speech runs from the end of one pause to the start of the next
-    lead = next((e for s_, e in zip(starts, ends) if s_ < 0.05), 0.0)
-    tail = next((s_ for s_, e in zip(starts, ends) if e >= total - 0.25), total)
-    spans = list(zip([lead] + [e for _, e in gaps], [s_ for s_, _ in gaps] + [tail]))
+    spans = None
+    wj = Path(str(take)).with_suffix(".words.json")
+    if wj.exists():
+        from .align import section_starts
+        words = [tuple(x) for sg in json.load(open(wj)) for x in sg["words"]]
+        times, cov = section_starts(sc, words)
+        if times and cov >= 0.6:
+            ends = []
+            for k, t0 in enumerate(times):
+                t1 = times[k + 1] if k + 1 < len(times) else total
+                last = max((e for st_, e, _ in words if t0 <= st_ < t1), default=t1)
+                ends.append(min(t1, last + 0.25))
+            spans = list(zip(times, ends))
+            print(f"voice: cut by matching your words to the script ({cov:.0%} of script words heard)")
+            for (n, _), (a_, _) in zip(sc, spans):
+                first = " ".join(w for st_, _, w in words if st_ >= a_)[:60]
+                print(f"voice:   {n:10s} {a_:7.1f}s  {first}")
+        else:
+            print(f"voice: script matching unreliable ({cov:.0%}), falling back to pauses")
+    if spans is None:
+        log = subprocess.run(["ffmpeg", "-i", str(take), "-af", "silencedetect=n=-38dB:d=0.9", "-f", "null", "-"],
+                             capture_output=True, text=True).stderr
+        starts = [float(x) for x in re.findall(r"silence_start: ([\d.]+)", log)]
+        ends = [float(x) for x in re.findall(r"silence_end: ([\d.]+)", log)]
+        gaps = sorted(zip(starts, ends), key=lambda g: g[1] - g[0], reverse=True)
+        gaps = sorted([g for g in gaps if g[0] > 0.3 and g[1] < total - 0.25][:need])
+        if len(gaps) < need:
+            raise SystemExit(f"found {len(gaps)} pauses but need {need}: re-record with clearer pauses at each [PAUSE]")
+        # speech runs from the end of one pause to the start of the next
+        lead = next((e for s_, e in zip(starts, ends) if s_ < 0.05), 0.0)
+        tail = next((s_ for s_, e in zip(starts, ends) if e >= total - 0.25), total)
+        spans = list(zip([lead] + [e for _, e in gaps], [s_ for s_, _ in gaps] + [tail]))
     out = ed / "audio_final"; out.mkdir(exist_ok=True)
     d = {}
     for (n, _), (a_, b_) in zip(sc, spans):

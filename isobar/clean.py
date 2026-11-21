@@ -114,7 +114,7 @@ def apply(wav, out, segs):
     x = x.astype(np.float32)
     n = len(x)
     if not segs:
-        wavfile.write(out, sr, x.astype(np.int16)); return 0.0
+        wavfile.write(out, sr, x.astype(np.int16)); return 0.0, []
     drop = find_retakes(segs)
     gate = keep_mask(n, segs, drop).astype(np.float32)
     # 20 ms fades at every gate edge to avoid clicks
@@ -129,7 +129,19 @@ def apply(wav, out, segs):
     removed = (n - len(y)) / sr
     for a, b in drop:
         print(f"clean: removed retake {a:.1f}s to {b:.1f}s")
-    return removed
+    return removed, drop
+
+
+def shift_words(segs, drop):
+    """Move word timings to match the audio after retakes were cut out."""
+    def moved(t):
+        return t - sum(min(b, t) - a for a, b in drop if a < t)
+    out = []
+    for sg in segs:
+        ws = [(moved(a), moved(b), w) for a, b, w in sg["words"] if not any(x <= a < y for x, y in drop)]
+        if ws:
+            out.append({**sg, "start": ws[0][0], "end": ws[-1][1], "words": ws})
+    return out
 
 
 def clean(take, out):
@@ -138,9 +150,9 @@ def clean(take, out):
         to_wav(take, raw)
         denoise(raw, den)
         segs = transcribe(den)
-        removed = apply(den, out, segs)
+        removed, drop = apply(den, out, segs)
         if segs:
-            json.dump(segs, open(Path(out).with_suffix(".words.json"), "w"))
+            json.dump(shift_words(segs, drop), open(Path(out).with_suffix(".words.json"), "w"))
     print(f"clean: wrote {out} ({removed:.1f}s of retakes removed)")
 
 
