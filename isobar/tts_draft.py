@@ -1,6 +1,6 @@
 """AI voice for draft videos: Kokoro (Apache 2.0, runs on CPU), British male voice "bm_george".
 Falls back to Festival HTS if Kokoro is unavailable. The final video uses the host's own voice when a take is uploaded."""
-import argparse, json, os, subprocess, urllib.request
+import argparse, json, os, re, subprocess, urllib.request
 from pathlib import Path
 
 
@@ -35,6 +35,30 @@ def kokoro():
     return Kokoro(str(cache / KOKORO_FILES[0]), str(cache / KOKORO_FILES[1]))
 
 
+def lexicon(ed):
+    """pronunciations.json at the editions repo root (two levels above editions/DATE), if present."""
+    f = Path(ed).resolve().parent.parent / "pronunciations.json"
+    lex = {k: v for k, v in json.load(open(f)).items() if not k.startswith("_")} if f.exists() else {}
+    return lex
+
+
+def to_phonemes(k, text, lex):
+    """espeak (en-gb) phonemes, with listed words replaced by their fixed pronunciation."""
+    if not lex:
+        return k.tokenizer.phonemize(text, "en-gb")
+    keys = sorted(lex, key=len, reverse=True)
+    rx = re.compile(r"(?<![\w-])(" + "|".join(map(re.escape, keys)) + r")('s|’s)?(?![\w-])")
+    out, pos = [], 0
+    for m in rx.finditer(text):
+        if text[pos:m.start()].strip():
+            out.append(k.tokenizer.phonemize(text[pos:m.start()], "en-gb"))
+        out.append(lex[m.group(1)] + ("z" if m.group(2) else ""))
+        pos = m.end()
+    if text[pos:].strip():
+        out.append(k.tokenizer.phonemize(text[pos:], "en-gb"))
+    return re.sub(r" +([.,;:!?])", r"\1", " ".join(x.strip() for x in out if x.strip()))
+
+
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("edition"); a = ap.parse_args()
     ed = Path(a.edition); out = ed / "audio_draft"; out.mkdir(exist_ok=True)
@@ -43,8 +67,11 @@ def main():
         import soundfile as sf
         k = kokoro()
 
+        lex = lexicon(ed)
+        print(f"draft voice: {len(lex)} pronunciation fixes loaded")
+
         def synth(n, t):
-            audio, sr = k.create(t, voice=VOICE, speed=1.0, lang="en-gb")
+            audio, sr = k.create(to_phonemes(k, t, lex), voice=VOICE, speed=1.0, lang="en-gb", is_phonemes=True)
             sf.write(out / f"{n}_raw.wav", audio, sr)
         engine = f"kokoro/{VOICE}"
     except Exception as e:  # never block a draft on the AI voice

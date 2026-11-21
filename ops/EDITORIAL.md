@@ -35,3 +35,13 @@ Use only facts present in that story's `summary`, `points` and `headlines`. Neve
 }
 ```
 Then: `git add editions/<DATE>/editorial.json && git commit -m "Edition <DATE>: editorial" && git push`.
+
+## 4. Pronunciation check (the AI voice)
+The draft voice reads `pronunciations.json` at the root of `isobar-editions`. After writing editorial.json,
+list the names and unusual words in today's 10 narrations (people, places, organisations, acronyms read as words).
+For each one not already in the file, check how espeak says it:
+`python3 -c "from kokoro_onnx import Kokoro; k=Kokoro('$HOME/.cache/kokoro/kokoro-v1.0.onnx','$HOME/.cache/kokoro/voices-v1.0.bin'); print(k.tokenizer.phonemize('NAME','en-gb'))"`
+(download the two model files from https://github.com/thewh1teagle/kokoro-onnx/releases/tag/model-files-v1.0 into ~/.cache/kokoro if missing).
+If it is wrong for a British news reader (wrong stress, Anglicised foreign names, letters read as a word), add
+`"Name": "phonemes"` in the same IPA style. Use the established English pronunciation where one exists
+(Xi = ʃˈiː, Pentagon = pˈɛntəɡɒn). Keep entries; never delete one without a reason. Commit it with editorial.json.
