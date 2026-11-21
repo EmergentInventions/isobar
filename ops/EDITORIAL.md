@@ -21,16 +21,18 @@ Use only facts present in that story's `summary`, `points` and `headlines`. Neve
 - `facts`: exactly 3, each at most 90 characters, concrete (numbers, places, who did what).
 - `narration`: 90–150 words, spoken style, British English, attribute every claim to who made it
   ("the ministry says", "according to the IEA"). No opinion, no speculation, no loaded words
-  (e.g. "slammed", "shocking", "regime" unless quoting). Do not start with the ordinal; the
-  pipeline adds "Second, covered by thirty-two outlets." itself.
+  (e.g. "slammed", "shocking", "regime" unless quoting). Start straight into the story: no rank
+  ("Second, ..."), no outlet count. The intro explains the ranking and the screen shows the numbers.
 - `category`: one or two words (e.g. "War in Ukraine", "Climate", "Energy", "Science").
 - `place`: "City, Country" if the story has a single location, otherwise null.
+- `country`: when `place` is null but the story happens in one country, that country (e.g. "Yemen"),
+  shown under the panel instead of a map. Omit it when the story spans several countries.
 
 ## 3. editorial.json shape
 ```json
 {
   "radar": [{"id": "<id from radar_pool>", "why": "<=110 chars"}, ...3],
-  "stories": {"<id>": {"headline": "", "facts": ["", "", ""], "narration": "", "category": "", "place": null}},
+  "stories": {"<id>": {"headline": "", "facts": ["", "", ""], "narration": "", "category": "", "place": null, "country": null}},
   "notes": "anything the host should know (sensitive stories, close calls, Anthropic-related items)"
 }
 ```

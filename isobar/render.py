@@ -193,10 +193,11 @@ def sc_story(i):
     y = 220
     for ln in wrap(d, st["headline"], serif(600, 70), MW):
         d.text((LX, y), ln, font=serif(600, 70), fill=INK); y += 78
-    y += 34
+    y += 64                                   # breathing room between headline and facts
     bl = []
+    BF, BLH = sans("Regular", 38), 52           # bullet font and line height
     for f in st["facts"]:
-        lines = wrap(d, f, sans("Regular", 32), MW - 40); bl.append((y, lines)); y += len(lines) * 44 + 24
+        lines = wrap(d, f, BF, MW - 44); bl.append((y, lines)); y += len(lines) * BLH + 34
     MX, MY, MWd, MH = W - 90 - 620, 150, 620, 460
     pin = None
     if st["lat"] is not None:
@@ -207,12 +208,16 @@ def sc_story(i):
     else:
         # no single place: a quiet panel built from the mark's contours
         panel = Image.new("RGB", (MWd, MH), (239, 233, 222)); pd = ImageDraw.Draw(panel)
-        pd.text((MWd // 2, MH // 2 - 20), " ".join(w if w in {"US","UK","EU","UN","AI","NATO","COP31"} else (w.capitalize() if k == 0 else w.lower()) for k, w in enumerate(st["category"].split("·")[-1].strip().split())), font=serif(500, 110, True), fill=INK, anchor="mm")
+        label = st.get("label") or " ".join(w if w in {"US","UK","EU","UN","AI","NATO","COP31"} else (w.capitalize() if k == 0 else w.lower()) for k, w in enumerate(st["category"].split("·")[-1].strip().split()))
+        fs = 110
+        while fs > 50 and pd.textlength(label, font=serif(500, fs, True)) > MWd - 70: fs -= 4   # fit the panel
+        pd.text((MWd // 2, MH // 2 - 20), label, font=serif(500, fs, True), fill=INK, anchor="mm")
         pd.line([MWd // 2 - 40, MH // 2 + 60, MWd // 2 + 40, MH // 2 + 60], fill=ACC, width=3)
         pd.text((MWd // 2, MH // 2 + 110), f"{st['sources']} OUTLETS", font=sans("SemiBold", 20), fill=SOFT, anchor="mm")
         msk = Image.new("L", (MWd, MH), 0); ImageDraw.Draw(msk).rounded_rectangle([0, 0, MWd - 1, MH - 1], 6, fill=255)
         base.paste(panel, (MX, MY), msk)
-        d.text((MX, MY + MH + 38), "No single location", font=serif(400, 30, True), fill=INK, anchor="ls")
+        if st.get("country") and st["country"] != label:   # one country, no single place: name it (unless the panel already does)
+            d.text((MX, MY + MH + 38), st["country"], font=serif(400, 30, True), fill=INK, anchor="ls")
     ty = MY + MH + 90
     d.line([MX, ty - 16, MX + MWd, ty - 16], fill=LINE, width=1)
     d.text((MX, ty + 10), "REPORTED BY", font=sans("SemiBold", 17), fill=SOFT, anchor="lm")
@@ -230,8 +235,8 @@ def sc_story(i):
     for k in range(4):
         im = base.copy(); dd = ImageDraw.Draw(im)
         for by, lines in bl[:k]:
-            dd.line([LX, by + 22, LX + 16, by + 22], fill=ACC, width=3)
-            for q, ln in enumerate(lines): dd.text((LX + 40, by + q * 44), ln, font=sans("Regular", 32), fill=INK)
+            dd.line([LX, by + 26, LX + 18, by + 26], fill=ACC, width=3)
+            for q, ln in enumerate(lines): dd.text((LX + 44, by + q * BLH), ln, font=BF, fill=INK)
         states.append(np.array(im))
     dur = DUR[f"{i+2:02d}_story"] + LEAD + TAIL
     return states, (lambda t: 0 if t < 0.7 else min(3, int((t - 0.7) / 1.2) + 1)), pin, dur, True

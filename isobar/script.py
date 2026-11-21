@@ -16,14 +16,6 @@ from num2words import num2words
 
 from .common import ROOT, edition_dir, load, save, today_utc
 
-# Spoken leads, kept varied so the count doesn't sound like a list being read out.
-ORD = ["Our top story today was reported by {n} outlets.", "The second most covered story, with {n} outlets.",
-       "Third, with {n} outlets.", "In fourth place, {n} outlets.", "Fifth, reported by {n} outlets.",
-       "Sixth, with {n} outlets.", "And seventh, with {n} outlets."]
-ORD_SAME = ["", "Also with {n} outlets.", "Third, also with {n} outlets.", "Fourth, also on {n} outlets.",
-            "Fifth, again with {n} outlets.", "Sixth, also with {n} outlets.", "And seventh, also with {n} outlets."]
-RAD = ["The first was reported by {just}{n} outlets.", "Next, a story carried by {just}{n} outlets.",
-       "And finally, from {just}{n} outlets."]
 FEATURE = ["BBC", "The New York Times", "The Guardian", "Financial Times", "Al Jazeera", "Le Monde", "Der Spiegel",
            "El País", "France 24", "DW", "South China Morning Post", "The Hindu", "NBC News", "CBS News", "PBS",
            "Scientific American", "Science", "The Kyiv Independent", "Dawn", "Euronews", "Reuters", "AP News"]
@@ -99,19 +91,16 @@ def build(d, date, strapline=None):
     for k, (s, seg, why) in enumerate(chosen):
         e = {**auto_story(s, s["category"].upper()), **ed.get("stories", {}).get(s["id"], {})}
         n = s["outlet_count"]
+        # No spoken rank or outlet count: the intro explains the ranking and the screen shows the numbers.
         if seg == "top":
-            same = k > 0 and chosen[k - 1][0]["outlet_count"] == n
-            lead = (ORD_SAME if same else ORD)[k].format(n=words(n)) + " "
             cat = e["category"].upper()
         else:
-            j = k - len(c["top"])
-            lead = RAD[j].format(n=words(n), just="just " if n < 6 else "") + " "
             cat = "BELOW THE RADAR · " + e["category"].upper().replace("BELOW THE RADAR · ", "")
         lat, lon = geocode(e.get("place"))
         stories.append({
-            "id": s["id"], "segment": seg, "category": cat, "headline": e["headline"], "facts": e["facts"][:3],
-            "narration": e["narration"] if e["narration"].startswith(lead.split(",")[0].split(" ")[0] + " ") and "outlets" in e["narration"][:80] else lead + e["narration"],
-            "place": e.get("place") if lat is not None else None, "lat": lat, "lon": lon,
+            "id": s["id"], "segment": seg, "category": cat, "label": e["category"].replace("BELOW THE RADAR · ", ""), "headline": e["headline"], "facts": e["facts"][:3],
+            "narration": e["narration"],
+            "place": e.get("place") if lat is not None else None, "country": e.get("country"), "lat": lat, "lon": lon,
             "sources": n, "outlets": s["outlets"], "outlet_line": feature_line(s["outlets"], n),
             "why": why or e.get("why") or "",
         })

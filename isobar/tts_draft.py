@@ -51,9 +51,22 @@ def speak_years(text):
     return YEAR.sub(lambda m: num2words(int(m.group(1)), to="year", lang="en_GB"), text)
 
 
+# Abbreviations the voice would spell out or misread, expanded before speaking.
+ABBREV = [(r"\bJr\b\.?", "Junior"), (r"\bSr\b\.?", "Senior"),
+          (r"\bSen\.(?= [A-Z])", "Senator"), (r"\bRep\.(?= [A-Z])", "Representative"), (r"\bGov\.(?= [A-Z])", "Governor"),
+          (r"\bGen\.(?= [A-Z])", "General"), (r"\bLt\.(?= [A-Z])", "Lieutenant"), (r"\bCol\.(?= [A-Z])", "Colonel"),
+          (r"\bSgt\.(?= [A-Z])", "Sergeant"), (r"\bCapt\.(?= [A-Z])", "Captain"), (r"\bProf\.(?= [A-Z])", "Professor")]
+
+
+def expand(text):
+    for pat, rep in ABBREV:
+        text = re.sub(pat, rep, text)
+    return speak_years(text)
+
+
 def to_phonemes(k, text, lex):
     """espeak (en-gb) phonemes, with listed words replaced by their fixed pronunciation."""
-    text = speak_years(text)
+    text = expand(text)
     if not lex:
         return k.tokenizer.phonemize(text, "en-gb")
     keys = sorted(lex, key=len, reverse=True)
