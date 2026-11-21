@@ -21,8 +21,9 @@ import numpy as np
 from scipy.io import wavfile
 
 SR = 48000
-PAD = 0.18          # seconds kept either side of each word
-MIN_GAP_GATE = 0.35  # only gate gaps longer than this
+PAD_BEFORE = 0.25   # seconds kept before each word
+PAD_AFTER = 0.55    # Whisper word ends run early: keep generous tails so endings are never clipped
+MIN_GAP_GATE = 1.0  # only silence gaps longer than this (pauses between sentences or sections)
 
 
 def to_wav(src, dst):
@@ -99,7 +100,7 @@ def keep_mask(n, segs, drop):
     speech = np.zeros(n, bool)
     for s in segs:
         for st, en, _ in s["words"]:
-            speech[max(0, int((st - PAD) * SR)): min(n, int((en + PAD) * SR))] = True
+            speech[max(0, int((st - PAD_BEFORE) * SR)): min(n, int((en + PAD_AFTER) * SR))] = True
     # short gaps between words stay as they are (natural rhythm)
     edges = np.flatnonzero(np.diff(speech.astype(np.int8)))
     for i in range(1, len(edges) - 1, 2):
@@ -118,7 +119,7 @@ def apply(wav, out, segs):
     drop = find_retakes(segs)
     gate = keep_mask(n, segs, drop).astype(np.float32)
     # 20 ms fades at every gate edge to avoid clicks
-    k = int(0.02 * sr); win = np.ones(k) / k
+    k = int(0.08 * sr); win = np.ones(k) / k  # gentle 80 ms fades
     gate = np.convolve(gate, win, mode="same")
     y = x * gate
     cut = np.ones(n, bool)

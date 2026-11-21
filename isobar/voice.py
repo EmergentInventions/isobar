@@ -40,7 +40,7 @@ def split(ed, take):
             for k, t0 in enumerate(times):
                 t1 = times[k + 1] if k + 1 < len(times) else total
                 last = max((e for st_, e, _ in words if t0 <= st_ < t1), default=t1)
-                ends.append(min(t1, last + 0.25))
+                ends.append(min(t1, last + 0.6))
             spans = list(zip(times, ends))
             print(f"voice: cut by matching your words to the script ({cov:.0%} of script words heard)")
             for (n, _), (a_, _) in zip(sc, spans):
@@ -65,7 +65,7 @@ def split(ed, take):
     d = {}
     for (n, _), (a_, b_) in zip(sc, spans):
         f = out / f"{n}.wav"
-        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(take), "-ss", f"{max(0, a_ - 0.08):.3f}", "-to", f"{b_ + 0.12:.3f}", "-af",
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(take), "-ss", f"{max(0, a_ - 0.08):.3f}", "-to", f"{b_ + 0.05:.3f}", "-af",
                         "highpass=f=70,acompressor=threshold=-20dB:ratio=2.5,loudnorm=I=-16:TP=-1.5,aresample=48000", "-ac", "2", str(f)], check=True)
         d[n] = dur(f)
     json.dump(d, open(out / "durations.json", "w"), indent=1)
