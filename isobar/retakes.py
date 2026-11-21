@@ -86,7 +86,7 @@ def confirmed(drops, words, script_text):
     T, own = _tokens(words)
     base = _heard(S, T)
     keep = []
-    for a, b in sorted(drops):
+    for a, b in sorted(d for d in drops if d[1] - d[0] >= 0.15):
         # drop words that lie mostly inside the cut
         inside = lambda k: min(b, words[k][1]) - max(a, words[k][0]) > 0.5 * max(0.01, words[k][1] - words[k][0])
         T2 = [t for t, k in zip(T, own) if not inside(k)]
