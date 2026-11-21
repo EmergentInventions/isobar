@@ -42,7 +42,8 @@ def denoise(wav, out):
     print("clean: denoised with DeepFilterNet")
 
 
-PROMPT = "Umm, so, uh, the the president- the president said, um, that- that it was, uh, it was fine."
+# Fillers only: Whisper copies the verbatim style, and anything that leaks is a filler we ignore
+PROMPT = "Um, uh, er- erm, uh- um. Hmm, uh, um- er."
 LONG_WORD = 0.9      # a word timed longer than this usually hides a restart Whisper skipped
 
 
@@ -64,7 +65,7 @@ def _refine(model, audio16, words):
             b_i = min(len(words), b_i + 3)
         a, b = words[a_i][0], words[b_i - 1][1]
         clip = audio16[int(max(0, a - 0.1) * 16000): int((b + 0.1) * 16000)]
-        new = [w for w in _words(model, clip, max(0, a - 0.1), prompt=None) if a - 0.2 <= w[0] <= b + 0.1]
+        new = [w for w in _words(model, clip, max(0, a - 0.1)) if a - 0.2 <= w[0] <= b + 0.1]
         old = words[a_i:b_i]
         if len(new) > len(old):
             out = [w for w in out if w[0] < a]
