@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Isobar.News · The world's news in ten minutes</title>
+<meta name="description" content="A daily ten-minute video briefing on the world's news. Seven stories ranked by how many outlets reported them, three important stories most outlets missed, and every source listed.">
+<link rel="canonical" href="https://isobar.news/">
+<link rel="icon" href="/assets/mark.svg" type="image/svg+xml">
+<link rel="icon" href="/assets/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<meta name="theme-color" content="#f7f4ee">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://isobar.news/">
+<meta property="og:title" content="Isobar.News">
+<meta property="og:description" content="The world's news in ten minutes, once a day. Every source listed.">
+<meta property="og:image" content="https://isobar.news/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preload" href="/assets/garamond-600.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/inter-400.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face{font-family:"EB Garamond";src:url(/assets/garamond-500.woff2) format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:"EB Garamond";src:url(/assets/garamond-600.woff2) format("woff2");font-weight:600;font-display:swap}
+@font-face{font-family:"EB Garamond";src:url(/assets/garamond-400i.woff2) format("woff2");font-weight:400;font-style:italic;font-display:swap}
+@font-face{font-family:Inter;src:url(/assets/inter-400.woff2) format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:Inter;src:url(/assets/inter-600.woff2) format("woff2");font-weight:600;font-display:swap}
+:root{--paper:#f7f4ee;--ink:#16181d;--soft:#62626a;--line:#d6d0c6;--acc:#b03428;--card:rgba(255,253,249,.72)}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper) url(/assets/isobars.svg) center top/cover fixed;color:var(--ink);font:400 17px/1.6 Inter,system-ui,sans-serif}
+a{color:inherit}
+.wrap{max-width:1040px;margin:0 auto;padding:0 28px}
+header{padding:34px 0 18px;border-bottom:2px solid var(--ink);display:flex;align-items:center;justify-content:space-between;gap:16px}
+.brand{display:flex;align-items:center;gap:14px;text-decoration:none}
+.brand img{width:44px;height:44px;border-radius:6px}
+.word{font:600 30px/1 "EB Garamond",Georgia,serif;letter-spacing:-.01em}
+.word span{color:var(--acc)}
+nav a{font-size:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;text-decoration:none;color:var(--soft);margin-left:22px}
+nav a:hover{color:var(--acc)}
+.hero{padding:88px 0 72px;max-width:760px}
+h1{font:600 clamp(42px,6.4vw,74px)/1.04 "EB Garamond",Georgia,serif;letter-spacing:-.015em;margin:0 0 26px}
+h1 em{font-weight:400;font-style:italic;color:var(--acc)}
+.lede{font-size:clamp(18px,2.1vw,21px);color:var(--soft);margin:0 0 34px;max-width:640px}
+.chip{display:inline-flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--card);padding:9px 16px;border-radius:999px;font-size:14px;font-weight:600}
+.chip i{width:8px;height:8px;border-radius:50%;background:var(--acc);display:block}
+section{padding:58px 0;border-top:1px solid var(--line)}
+h2{font:600 34px/1.15 "EB Garamond",Georgia,serif;margin:0 0 10px}
+.sub{color:var(--soft);margin:0 0 32px;max-width:640px}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px;counter-reset:s;list-style:none;padding:0;margin:0}
+.steps li{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:22px 22px 20px;counter-increment:s}
+.steps li::before{content:counter(s);display:block;font:600 34px/1 "EB Garamond",Georgia,serif;color:var(--acc);margin-bottom:12px}
+.steps h3{font-size:16px;margin:0 0 6px}
+.steps p{margin:0;font-size:15px;color:var(--soft)}
+.split{display:grid;grid-template-columns:1.2fr 1fr;gap:40px;align-items:start}
+.day{list-style:none;margin:0;padding:0}
+.day li{display:grid;grid-template-columns:150px 1fr;gap:14px;padding:14px 0;border-bottom:1px solid var(--line);font-size:15px}
+.day li:last-child{border-bottom:0}
+.day b{font-weight:600}
+.btn{display:inline-block;margin-top:8px;background:var(--ink);color:var(--paper);text-decoration:none;font-weight:600;font-size:15px;padding:12px 20px;border-radius:8px}
+.btn:hover{background:var(--acc)}
+footer{border-top:2px solid var(--ink);padding:26px 0 48px;font-size:13.5px;color:var(--soft);display:flex;flex-wrap:wrap;gap:8px 28px;justify-content:space-between}
+footer p{margin:0;max-width:640px}
+@media (max-width:760px){
+  nav{display:none}
+  .hero{padding:56px 0 48px}
+  .split{grid-template-columns:1fr;gap:20px}
+  .day li{grid-template-columns:1fr;gap:2px}
+  body{background:var(--paper) url(/assets/isobars.svg) center top/1400px auto no-repeat}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="brand" href="/" aria-label="Isobar.News home"><img src="/assets/mark.svg" alt=""><span class="word">Isobar<span>.News</span></span></a>
+    <nav><a href="#method">How it works</a><a href="#open">Open code</a></nav>
+  </header>
+
+  <main>
+    <div class="hero">
+      <h1>The world's news in ten minutes, <em>once a day.</em></h1>
+      <p class="lede">A daily video briefing. Seven stories ranked by how many news outlets reported them, then three important stories that most outlets missed. Every source is listed.</p>
+      <span class="chip"><i></i>First editions coming soon on YouTube</span>
+    </div>
+
+    <section id="method">
+      <h2>How stories are chosen</h2>
+      <p class="sub">The same rules every day, applied to hundreds of outlets around the world. Nobody picks the top stories by hand.</p>
+      <ol class="steps">
+        <li><h3>Count the outlets</h3><p>For each story we count the separate news outlets that reported it. Aggregators and platforms never count.</p></li>
+        <li><h3>Merge duplicates</h3><p>Reports that are clearly about the same event are counted as one story.</p></li>
+        <li><h3>Most covered</h3><p>The seven world stories with the most outlets lead the edition, with no more than two from any one country.</p></li>
+        <li><h3>Below the radar</h3><p>Three stories with far less coverage, picked for impact: people affected, how long it will matter, precedent, and a primary source. The reason for each pick is given.</p></li>
+      </ol>
+    </section>
+
+    <section>
+      <div class="split">
+        <div>
+          <h2>Every day</h2>
+          <p class="sub">One edition a day, about ten minutes long. No rolling coverage, no breaking-news alerts.</p>
+        </div>
+        <ul class="day">
+          <li><b>Midday, UTC</b><span>The day's stories are gathered and grouped from outlets' own reporting.</span></li>
+          <li><b>Early afternoon, UK</b><span>The new edition is published, with chapters, captions and the full list of sources.</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="open">
+      <div class="split">
+        <div>
+          <h2>Open by design</h2>
+          <p class="sub">The whole pipeline, from gathering stories to ranking them and making the video, is public code. Anyone can check how a day's stories were chosen.</p>
+          <a class="btn" href="https://github.com/EmergentInventions/isobar">Read the code on GitHub</a>
+        </div>
+        <ul class="day">
+          <li><b>Ranking rules</b><span>Published, and the same for every story.</span></li>
+          <li><b>Editorial rubric</b><span>The criteria for Below the Radar picks, in writing.</span></li>
+          <li><b>Photos</b><span>Freely licensed and credited on screen.</span></li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Story clustering and summaries adapted from Kagi News under <a href="https://creativecommons.org/licenses/by-nc/4.0/">CC BY-NC 4.0</a>. Photos from Wikimedia Commons, credited in each video.</p>
+    <p>© 2026 Emergent Inventions LLC</p>
+  </footer>
+</div>
+</body>
+</html>
