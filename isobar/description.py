@@ -2,6 +2,8 @@
 import argparse, json
 from pathlib import Path
 
+from .common import yt_title
+
 
 def mmss(x):
     x = int(x); return f"{x // 60}:{x % 60:02d}"
@@ -15,7 +17,7 @@ def main():
     for k, v in L.items():
         at[k] = t; t += v
     ntop = sum(1 for x in s["stories"] if x["segment"] == "top")
-    out = [f"Isobar News | {s['date']}", "", "Chapters", "0:00 Today's stories"]
+    out = [yt_title(s["stories"][0]["headline"], ed.name), "", "Chapters", "0:00 Today's stories"]
     for i, st in enumerate(s["stories"]):
         if i == ntop and "08a_radar" in at:
             out.append(f"{mmss(at['08a_radar'])} Below the Radar")
