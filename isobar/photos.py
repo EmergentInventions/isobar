@@ -55,7 +55,8 @@ def safe(pid):
 def _info(pg, width_ok=800):
     """Candidate dict from an imageinfo page, or None if unusable (licence, size)."""
     if "imageinfo" not in pg: return None
-    ii = pg["imageinfo"][0]; m = ii.get("extmetadata", {})
+    ii = pg["imageinfo"][0]; m = ii.get("extmetadata") or {}
+    if not isinstance(m, dict): m = {}               # some files return an empty list instead of a dict
     lic = _clean(m.get("LicenseShortName", {}).get("value"))
     if not REUSABLE.match(lic) or (ii.get("width") or 0) < width_ok or not ii.get("thumburl"): return None
     return {"title": pg["title"][5:], "page": ii["descriptionurl"], "thumb": ii["thumburl"], "license": lic,
@@ -242,8 +243,11 @@ def fetch(ed, width=1280):
                 _thumb_jpeg(c["thumb"], ed / "photos" / f"{safe(pid)}.jpg")
             c = cands.get(pid)
             if not c: print(f"photos: {pid} not among the candidates"); continue
-            big = file_info(c["title"], width=width)
-            _thumb_jpeg(big["thumb"], ed / "photos" / f"use_{safe(pid)}.jpg"); print(f"photos: {pid} downloaded")
+            try:
+                url = file_info(c["title"], width=width)["thumb"]
+            except Exception:                          # fall back to the stored thumbnail URL at a larger size
+                url = re.sub(r"/\d+px-", f"/{width}px-", c["thumb"])
+            _thumb_jpeg(url, ed / "photos" / f"use_{safe(pid)}.jpg"); print(f"photos: {pid} downloaded")
         except Exception as e:
             print(f"photos: could not fetch {pid}: {e!r}")
     pj.write_text(json.dumps(cands, indent=1, ensure_ascii=False))
