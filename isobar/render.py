@@ -130,6 +130,79 @@ def flat_map(lat, lon, w, h, span=22):
     p = ax.transData.transform((x, y)); plt.close(fig)
     return img, (int(p[0] * w / fig.canvas.get_width_height()[0]), int(h - p[1] * h / fig.canvas.get_width_height()[1]))
 
+# ---------- country shading (stories with no single place) ----------
+import shapefile, geonamescache
+from matplotlib.patches import Polygon as _Poly
+_NE = shapefile.Reader(str(ASSETS / "countries" / "naturalearth_lowres.shp"), encoding="latin1")
+_NE_SHAPES = {rec["name"]: shp for rec, shp in zip(_NE.records(), _NE.shapes())}
+_NE_ISO = {rec["iso_a3"]: rec["name"] for rec in _NE.records()}
+_ALIAS = {"DR Congo": "Dem. Rep. Congo", "Democratic Republic of the Congo": "Dem. Rep. Congo", "Congo-Kinshasa": "Dem. Rep. Congo",
+          "Republic of the Congo": "Congo", "US": "United States of America", "USA": "United States of America",
+          "United States": "United States of America", "UK": "United Kingdom", "Britain": "United Kingdom",
+          "Czech Republic": "Czechia", "South Sudan": "S. Sudan", "Central African Republic": "Central African Rep.",
+          "Bosnia and Herzegovina": "Bosnia and Herz.", "Dominican Republic": "Dominican Rep.", "Ivory Coast": "Côte d'Ivoire",
+          "Eswatini": "eSwatini", "North Macedonia": "North Macedonia", "Western Sahara": "W. Sahara", "Gaza": "Palestine",
+          "Palestinian territories": "Palestine", "West Bank": "Palestine"}
+_GC = geonamescache.GeonamesCache()
+
+def _capital(name):
+    for c in _GC.get_countries().values():
+        if c["name"].lower() == name.lower() or c["iso3"] == name.upper():
+            hits = _GC.search_cities(c["capital"], contains_search=False)
+            if hits:
+                h = max(hits, key=lambda x: x.get("population", 0)); return float(h["longitude"]), float(h["latitude"])
+    return None
+
+def _ne_name(name):
+    n = _ALIAS.get(name, name)
+    if n in _NE_SHAPES: return n
+    for c in _GC.get_countries().values():
+        if c["name"].lower() == name.lower() and _NE_ISO.get(c["iso3"]) in _NE_SHAPES: return _NE_ISO[c["iso3"]]
+    return None
+
+def _parts(shp):
+    idx = list(shp.parts) + [len(shp.points)]
+    return [shp.points[a:b] for a, b in zip(idx[:-1], idx[1:])]
+
+def country_map(names, w, h, zoom_out=3.0):
+    """Map with the story's countries shaded (first one darker); tiny countries get a dot at the capital.
+    Returns (image, (cx, cy)) where (cx, cy) is the pixel centre of the shaded area; the view spans zoom_out x its extent."""
+    shapes, dots = [], []
+    for k, n in enumerate(names):
+        ne = _ne_name(n)
+        if ne:
+            # ignore far-flung islands: keep parts within 25 degrees of the largest part (e.g. mainland France)
+            ps = _parts(_NE_SHAPES[ne]); big = max(ps, key=len)
+            bx = sum(p[0] for p in big) / len(big); by = sum(p[1] for p in big) / len(big)
+            shapes.append((k, [p for p in ps if abs(sum(q[0] for q in p) / len(p) - bx) < 25 and abs(sum(q[1] for q in p) / len(p) - by) < 25]))
+        else:
+            c = _capital(n)
+            if c: dots.append((k, c))
+    pts = [q for _, ps in shapes for p in ps for q in p] + [c for _, c in dots]
+    if not pts: return None, None
+    lo0, lo1 = min(p[0] for p in pts), max(p[0] for p in pts); la0, la1 = min(p[1] for p in pts), max(p[1] for p in pts)
+    cx, cy = (lo0 + lo1) / 2, (la0 + la1) / 2
+    m_ = lambda la: math.log(math.tan(math.pi / 4 + math.radians(max(-80, min(80, la))) / 2))
+    tall = math.degrees(m_(la1) - m_(la0))                                # latitude extent as projected (Mercator stretches the north)
+    span = max(lo1 - lo0, tall * w / h, 8) * 0.65 * zoom_out             # half-width in degrees of longitude
+    cy = math.degrees(2 * math.atan(math.exp((m_(la0) + m_(la1)) / 2)) - math.pi / 2)   # centre in projected space
+    yc = m_(cy); yh = math.radians(span) * h / w
+    A = math.degrees(2 * math.atan(math.exp(yc - yh)) - math.pi / 2); B = math.degrees(2 * math.atan(math.exp(yc + yh)) - math.pi / 2)
+    fig = plt.figure(figsize=(w / 100, h / 100), dpi=100); ax = fig.add_axes([0, 0, 1, 1]); ax.set_axis_off()
+    m = Basemap(projection="merc", llcrnrlat=max(-80, A), urcrnrlat=min(80, B), llcrnrlon=cx - span, urcrnrlon=cx + span, resolution="l", ax=ax, fix_aspect=False)
+    m.drawmapboundary(fill_color="#dfe4e6", linewidth=0); m.fillcontinents(color="#efe9de", lake_color="#dfe4e6")
+    for k, ps in shapes:
+        for p in ps:
+            xy = [m(x, y) for x, y in p]
+            ax.add_patch(_Poly(xy, closed=True, facecolor="#b03428", alpha=0.62 if k == 0 else 0.30, edgecolor="#7a241c", linewidth=0.8, zorder=3))
+    m.drawcoastlines(color="#8d8a84", linewidth=0.6); m.drawcountries(color="#b8b1a5", linewidth=0.6)
+    for k, (x, y) in dots:
+        X, Y = m(x, y); ax.plot(X, Y, "o", ms=16 if k == 0 else 12, mfc="#b03428", mec="#f7f4ee", mew=2, zorder=5)
+    X, Y = m(cx, cy); fig.canvas.draw()
+    img = Image.frombuffer("RGBA", fig.canvas.get_width_height(), fig.canvas.buffer_rgba()).convert("RGB").resize((w, h))
+    p = ax.transData.transform((X, Y)); W0, H0 = fig.canvas.get_width_height(); plt.close(fig)
+    return img, (int(p[0] * w / W0), int(h - p[1] * h / H0))
+
 # ---------- scenes: each returns (states, state_fn(t), pin or None, duration) ----------
 def sc_sting():
     dur = 3.2
@@ -222,13 +295,20 @@ def sc_story(i):
     MX, MY, MWd, MH = W - 90 - 620, 150, 620, 460
     name = f"{i+2:02d}_story"; dur = DUR[name] + LEAD + TAIL
     PMASK = Image.new("L", (MWd, MH), 0); ImageDraw.Draw(PMASK).rounded_rectangle([0, 0, MWd - 1, MH - 1], 6, fill=255)
-    big = None
+    big, bx, by, has_pin, zmax = None, 0, 0, False, 3.35
+    names = st.get("countries") or ([st["country"]] if st.get("country") else [])
+    if st["lat"] is None and names:
+        big, ctr = country_map(names, MWd * ZM, MH * ZM)
+        if big is not None:
+            bx, by = ctr; zmax = 2.0     # stop with the whole shaded area in view
+            d.text((MX, MY + MH + 38), ", ".join(names), font=serif(400, 30, True), fill=INK, anchor="ls")
     if st["lat"] is not None:
+        has_pin = True
         # a 3x, continent-wide map that the camera zooms into (drawn per frame)
         big, (bx, by) = flat_map(st["lat"], st["lon"], MWd * ZM, MH * ZM, span=60)
         d.text((MX, MY + MH + 38), st["place"], font=serif(400, 30, True), fill=INK, anchor="ls")
-    else:
-        # no single place: a quiet panel built from the mark's contours
+    elif big is None:
+        # no place and no countries (e.g. a global story): a quiet panel built from the mark's contours
         panel = Image.new("RGB", (MWd, MH), (239, 233, 222)); pd = ImageDraw.Draw(panel)
         label = st.get("label") or " ".join(w if w in {"US","UK","EU","UN","AI","NATO","COP31"} else (w.capitalize() if k == 0 else w.lower()) for k, w in enumerate(st["category"].split("·")[-1].strip().split()))
         fs = 110
@@ -273,7 +353,7 @@ def sc_story(i):
     PIN = [None]
     def view(t):  # continent to region over 5 s (ease-out), then a slow drift closer
         e = min(1, t / 5.0); e = 1 - (1 - e) ** 3
-        return 1 + 2.0 * e + 0.35 * max(0, t - 5.0) / max(1, dur - 5.0)
+        return 1 + (zmax - 1.35) * e + 0.35 * max(0, t - 5.0) / max(1, dur - 5.0)
     def at(t):
         arr = states[sum(1 for r in reveal if t >= r)].copy()
         panel, pin_xy = None, None
@@ -281,7 +361,7 @@ def sc_story(i):
             z = view(t); cw, ch = MWd * ZM / z, MH * ZM / z
             x0 = min(max(bx - cw / 2, 0), MWd * ZM - cw); y0 = min(max(by - ch / 2, 0), MH * ZM - ch)
             panel = big.resize((MWd, MH), Image.BILINEAR, box=(x0, y0, x0 + cw, y0 + ch))
-            pin_xy = (MX + int((bx - x0) * MWd / cw), MY + int((by - y0) * MH / ch))
+            pin_xy = (MX + int((bx - x0) * MWd / cw), MY + int((by - y0) * MH / ch)) if has_pin else None
         if tc is not None and t > tc:
             a = min(1.0, (t - tc) / 0.5)
             under = panel if panel is not None else Image.fromarray(arr[MY:MY + MH, MX:MX + MWd])
@@ -305,11 +385,10 @@ def make_card(c, w, h):
         for ln in lines: d.text((50, y), ln, font=f, fill=INK, anchor="ls"); y += int(f.size * 1.25)
         d.text((50, y + 30), "\u2014 " + c.get("by", ""), font=sans("SemiBold", 22), fill=SOFT, anchor="ls")
     else:
-        d.text((w // 2, 58), "KEY FIGURE", font=sans("SemiBold", 18), fill=SOFT, anchor="mm")
         fs = 150
         while fs > 60 and d.textlength(c["big"], font=serif(600, fs)) > w - 80: fs -= 6
-        d.text((w // 2, h // 2 - 20), c["big"], font=serif(600, fs), fill=ACC, anchor="mm")
-        f = sans("Regular", 27); y = h // 2 + fs // 2 + 10
+        d.text((w // 2, h // 2 - 40), c["big"], font=serif(600, fs), fill=ACC, anchor="mm")
+        f = sans("Regular", 27); y = h // 2 + fs // 2 - 6
         for ln in wrap(d, c.get("label", ""), f, w - 90)[:3]:
             d.text((w // 2, y), ln, font=f, fill=INK, anchor="mm"); y += 36
         if c.get("source"):

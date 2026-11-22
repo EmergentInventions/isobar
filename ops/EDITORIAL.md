@@ -25,8 +25,9 @@ Use only facts present in that story's `summary`, `points` and `headlines`. Neve
   ("Second, ..."), no outlet count. The intro explains the ranking and the screen shows the numbers.
 - `category`: one or two words (e.g. "War in Ukraine", "Climate", "Energy", "Science").
 - `place`: "City, Country" if the story has a single location, otherwise null.
-- `country`: when `place` is null but the story happens in one country, that country (e.g. "Yemen"),
-  shown under the panel instead of a map. Omit it when the story spans several countries.
+- `countries`: when `place` is null, the countries the story is about, main one first, e.g.
+  `["DR Congo", "Uganda", "Kenya", "Nigeria"]` or `["Iran", "Bahrain"]`. They are shaded on the map (main one
+  darker; very small countries get a dot at the capital). Leave it out only for truly global stories.
 - `card` (optional, one per story): shown over the map when its sentence is spoken. Either a key figure
   `{"kind": "number", "big": "$5 million", "label": "US reward offered for his arrest", "source": "US State Department"}`
   (`big` at most 10 characters, `label` at most 90) or a quote
@@ -38,7 +39,7 @@ Use only facts present in that story's `summary`, `points` and `headlines`. Neve
 ```json
 {
   "radar": [{"id": "<id from radar_pool>", "why": "<=110 chars"}, ...3],
-  "stories": {"<id>": {"headline": "", "facts": ["", "", ""], "narration": "", "category": "", "place": null, "country": null, "card": null}},
+  "stories": {"<id>": {"headline": "", "facts": ["", "", ""], "narration": "", "category": "", "place": null, "countries": null, "card": null}},
   "notes": "anything the host should know (sensitive stories, close calls, Anthropic-related items)"
 }
 ```
