@@ -369,7 +369,7 @@ def sc_story(i):
         return 1 + (zmax - 1.35) * e + 0.35 * max(0, t - 5.0) / max(1, dur - 5.0)
     def photo_at(t):  # slow push-in, credit on top
         z = 1 + 0.10 * min(1, (t - tp) / max(1, (tc or dur) - tp))
-        cw, ch = MWd * 1.12 / z, MH * 1.12 / z; x0 = (MWd * 1.12 - cw) / 2; y0 = (MH * 1.12 - ch) / 2
+        PW, PH = photo_big.size; cw, ch = PW / z, PH / z; x0 = (PW - cw) / 2; y0 = (PH - ch) / 2
         im = photo_big.resize((MWd, MH), Image.BILINEAR, box=(x0, y0, x0 + cw, y0 + ch)); im.paste(credit_band, (0, 0), credit_band)
         return im
     def at(t):
@@ -384,7 +384,10 @@ def sc_story(i):
             if t0 is None or layer is None or t <= t0: continue
             a = min(1.0, (t - t0) / 0.5)
             under = panel if panel is not None else Image.fromarray(arr[MY:MY + MH, MX:MX + MWd])
-            top = layer(t); panel = top if a >= 1 else Image.blend(under, top, a)
+            try:
+                top = layer(t); panel = top if a >= 1 else Image.blend(under, top, a)
+            except Exception as ex:  # a bad photo or card must never stop the video
+                print(f"render: panel layer skipped in {name}: {ex!r}", flush=True); continue
             if a > 0.3: pin_xy = None
         if panel is not None:
             region = Image.fromarray(arr[MY:MY + MH, MX:MX + MWd]); region.paste(panel, (0, 0), PMASK)
