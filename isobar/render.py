@@ -1,6 +1,8 @@
 """Isobar edition renderer: per-scene encode, animated ticker, pin pulse, bullet reveals, logo sting."""
-import argparse, json, math, os, sys, subprocess
+import argparse, json, math, os, re, sys, subprocess
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from isobar.common import sentences, yt_title
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import matplotlib
@@ -10,6 +12,7 @@ from mpl_toolkits.basemap import Basemap
 
 W, H, FPS = 1920, 1080, 30
 LEAD, TAIL = 0.35, 0.65
+ZM = 3  # map zoom: the story map is drawn at 3x and the camera moves from the whole of it to ~1/3.35
 _ap = argparse.ArgumentParser()
 _ap.add_argument("edition"); _ap.add_argument("--audio", default="audio_draft"); _ap.add_argument("--out", default="draft.mp4")
 _ap.add_argument("--stills", nargs="*")
@@ -18,6 +21,25 @@ ED = Path(ARGS.edition); AUD = ED / ARGS.audio
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 S = json.load(open(ED / "script.json")); ST = S["stories"]; N = len(ST)
 DUR = json.load(open(AUD / "durations.json"))
+TIM = json.load(open(AUD / "timings.json")) if (AUD / "timings.json").exists() else {}
+TEXT = {"01_intro": S["intro"]["narration"], "08a_radar": S.get("radar_bumper", ""), "99_outro": S["outro"]["narration"],
+        **{f"{i+2:02d}_story": s["narration"] for i, s in enumerate(S["stories"])}}
+
+def marks(name):
+    """[[start, end, sentence], ...] within the scene's audio: measured by the voice step, else estimated by length."""
+    if name in TIM: return TIM[name]
+    ss = sentences(TEXT.get(name, "")); total = DUR.get(name, 0); n = sum(len(s) for s in ss) or 1; out, pos = [], 0.0
+    for s in ss: d = total * len(s) / n; out.append([pos, pos + d, s]); pos += d
+    return out
+
+STOP = set("that this with from have been were which their after about more than they will would could said says also into over under were what when where while there these those other some such only just".split())
+def toks(s): return {w for w in re.findall(r"[a-z]{4,}|\d[\d,.]*", s.lower()) if w not in STOP}
+def when_said(name, text):
+    """Seconds into the scene (including LEAD) when the sentence that best matches `text` starts, or None."""
+    mk = marks(name); ft = toks(text)
+    if not mk or not ft: return None
+    j = max(range(len(mk)), key=lambda j: (len(ft & toks(mk[j][2])), -j))
+    return LEAD + mk[j][0] if ft & toks(mk[j][2]) else None
 MAXSRC = max(s["sources"] or 0 for s in ST)
 NTOP = sum(1 for s in ST if s["segment"] == "top")
 PAPER, INK, SOFT, LINE, ACC = (247, 244, 238), (22, 24, 29), (112, 112, 118), (214, 208, 198), (176, 52, 40)
@@ -94,10 +116,9 @@ STRIP, TW = make_strip()
 STRIP_BG = PAPER_ARR[TY + 1:H, LABEL_W:W].astype(np.float32)
 
 # ---------- map ----------
-def flat_map(lat, lon, w, h):
+def flat_map(lat, lon, w, h, span=22):
     fig = plt.figure(figsize=(w / 100, h / 100), dpi=100)
     ax = fig.add_axes([0, 0, 1, 1]); ax.set_axis_off()
-    span = 22
     yc = math.log(math.tan(math.pi / 4 + math.radians(lat) / 2)); yh = math.radians(span) * h / w
     la0 = math.degrees(2 * math.atan(math.exp(yc - yh)) - math.pi / 2); la1 = math.degrees(2 * math.atan(math.exp(yc + yh)) - math.pi / 2)
     m = Basemap(projection="merc", llcrnrlat=la0, urcrnrlat=la1, llcrnrlon=lon - span, urcrnrlon=lon + span, resolution="l", ax=ax, fix_aspect=False)
@@ -199,11 +220,12 @@ def sc_story(i):
     for f in st["facts"]:
         lines = wrap(d, f, BF, MW - 44); bl.append((y, lines)); y += len(lines) * BLH + 34
     MX, MY, MWd, MH = W - 90 - 620, 150, 620, 460
-    pin = None
+    name = f"{i+2:02d}_story"; dur = DUR[name] + LEAD + TAIL
+    PMASK = Image.new("L", (MWd, MH), 0); ImageDraw.Draw(PMASK).rounded_rectangle([0, 0, MWd - 1, MH - 1], 6, fill=255)
+    big = None
     if st["lat"] is not None:
-        mimg, (px, py) = flat_map(st["lat"], st["lon"], MWd, MH)
-        msk = Image.new("L", (MWd, MH), 0); ImageDraw.Draw(msk).rounded_rectangle([0, 0, MWd - 1, MH - 1], 6, fill=255)
-        base.paste(mimg, (MX, MY), msk); pin = (MX + px, MY + py)
+        # a 3x, continent-wide map that the camera zooms into (drawn per frame)
+        big, (bx, by) = flat_map(st["lat"], st["lon"], MWd * ZM, MH * ZM, span=60)
         d.text((MX, MY + MH + 38), st["place"], font=serif(400, 30, True), fill=INK, anchor="ls")
     else:
         # no single place: a quiet panel built from the mark's contours
@@ -214,8 +236,7 @@ def sc_story(i):
         pd.text((MWd // 2, MH // 2 - 20), label, font=serif(500, fs, True), fill=INK, anchor="mm")
         pd.line([MWd // 2 - 40, MH // 2 + 60, MWd // 2 + 40, MH // 2 + 60], fill=ACC, width=3)
         pd.text((MWd // 2, MH // 2 + 110), f"{st['sources']} OUTLETS", font=sans("SemiBold", 20), fill=SOFT, anchor="mm")
-        msk = Image.new("L", (MWd, MH), 0); ImageDraw.Draw(msk).rounded_rectangle([0, 0, MWd - 1, MH - 1], 6, fill=255)
-        base.paste(panel, (MX, MY), msk)
+        base.paste(panel, (MX, MY), PMASK)
         if st.get("country") and st["country"] != label:   # one country, no single place: name it (unless the panel already does)
             d.text((MX, MY + MH + 38), st["country"], font=serif(400, 30, True), fill=INK, anchor="ls")
     ty = MY + MH + 90
@@ -232,14 +253,68 @@ def sc_story(i):
         for q, ln in enumerate(wrap(d, st["why"], sans("Regular", 22), MWd)):
             d.text((MX, ty + 190 + q * 30), ln, font=sans("Regular", 22), fill=INK, anchor="lm")
     states = []
-    for k in range(4):
+    for k in range(len(bl) + 1):
         im = base.copy(); dd = ImageDraw.Draw(im)
-        for by, lines in bl[:k]:
-            dd.line([LX, by + 26, LX + 18, by + 26], fill=ACC, width=3)
-            for q, ln in enumerate(lines): dd.text((LX + 44, by + q * BLH), ln, font=BF, fill=INK)
+        for by_, lines in bl[:k]:
+            dd.line([LX, by_ + 26, LX + 18, by_ + 26], fill=ACC, width=3)
+            for q, ln in enumerate(lines): dd.text((LX + 44, by_ + q * BLH), ln, font=BF, fill=INK)
         states.append(np.array(im))
-    dur = DUR[f"{i+2:02d}_story"] + LEAD + TAIL
-    return states, (lambda t: 0 if t < 0.7 else min(3, int((t - 0.7) / 1.2) + 1)), pin, dur, True
+    # each bullet appears when the narration reaches the sentence it summarises
+    reveal, prev = [], -0.5
+    for j, f in enumerate(st["facts"]):
+        r = when_said(name, f)
+        if r is None: r = 0.7 + dur * 0.6 * j / max(1, len(st["facts"]))
+        r = min(max(r, prev + 1.2, 0.7), dur - 1.5); reveal.append(r); prev = r
+    # optional card (key figure or quote), crossfades over the map when its sentence is spoken
+    card = st.get("card"); card_img = make_card(card, MWd, MH) if card else None; tc = None
+    if card_img is not None and dur > 12:
+        w_ = when_said(name, card.get("text") or (card.get("label", "") + " " + card.get("big", "")))
+        tc = min(max(w_ or dur * 0.5, 5.0, dur * 0.35), dur - 5)
+    PIN = [None]
+    def view(t):  # continent to region over 5 s (ease-out), then a slow drift closer
+        e = min(1, t / 5.0); e = 1 - (1 - e) ** 3
+        return 1 + 2.0 * e + 0.35 * max(0, t - 5.0) / max(1, dur - 5.0)
+    def at(t):
+        arr = states[sum(1 for r in reveal if t >= r)].copy()
+        panel, pin_xy = None, None
+        if big is not None:
+            z = view(t); cw, ch = MWd * ZM / z, MH * ZM / z
+            x0 = min(max(bx - cw / 2, 0), MWd * ZM - cw); y0 = min(max(by - ch / 2, 0), MH * ZM - ch)
+            panel = big.resize((MWd, MH), Image.BILINEAR, box=(x0, y0, x0 + cw, y0 + ch))
+            pin_xy = (MX + int((bx - x0) * MWd / cw), MY + int((by - y0) * MH / ch))
+        if tc is not None and t > tc:
+            a = min(1.0, (t - tc) / 0.5)
+            under = panel if panel is not None else Image.fromarray(arr[MY:MY + MH, MX:MX + MWd])
+            panel = card_img if a >= 1 else Image.blend(under, card_img, a)
+            if a > 0.3: pin_xy = None
+        if panel is not None:
+            region = Image.fromarray(arr[MY:MY + MH, MX:MX + MWd]); region.paste(panel, (0, 0), PMASK)
+            arr[MY:MY + MH, MX:MX + MWd] = np.array(region)
+        PIN[0] = pin_xy
+        return arr
+    return at, None, (lambda t: PIN[0]), dur, True
+
+def make_card(c, w, h):
+    """Key figure ("big" + "label") or quote ("text" + "by") on the panel paper."""
+    im = Image.new("RGB", (w, h), (239, 233, 222)); d = ImageDraw.Draw(im)
+    if c.get("kind") == "quote":
+        d.text((44, 120), "\u201c", font=serif(600, 160), fill=ACC, anchor="ls")
+        f = serif(500, 40, True); lines = wrap(d, c["text"], f, w - 100)
+        while len(lines) > 5 and f.size > 28: f = serif(500, f.size - 2, True); lines = wrap(d, c["text"], f, w - 100)
+        y = 150
+        for ln in lines: d.text((50, y), ln, font=f, fill=INK, anchor="ls"); y += int(f.size * 1.25)
+        d.text((50, y + 30), "\u2014 " + c.get("by", ""), font=sans("SemiBold", 22), fill=SOFT, anchor="ls")
+    else:
+        d.text((w // 2, 58), "KEY FIGURE", font=sans("SemiBold", 18), fill=SOFT, anchor="mm")
+        fs = 150
+        while fs > 60 and d.textlength(c["big"], font=serif(600, fs)) > w - 80: fs -= 6
+        d.text((w // 2, h // 2 - 20), c["big"], font=serif(600, fs), fill=ACC, anchor="mm")
+        f = sans("Regular", 27); y = h // 2 + fs // 2 + 10
+        for ln in wrap(d, c.get("label", ""), f, w - 90)[:3]:
+            d.text((w // 2, y), ln, font=f, fill=INK, anchor="mm"); y += 36
+        if c.get("source"):
+            d.text((w // 2, h - 34), c["source"], font=sans("Regular", 19), fill=SOFT, anchor="mm")
+    return im
 
 def sc_outro():
     base = paper(); masthead(base); ticker_band(base); d = ImageDraw.Draw(base)
@@ -284,9 +359,67 @@ def sc_outro():
         return arr
     return at, None, None, dur, True
 
+
+# ---------- captions, thumbnail, title ----------
+def _ts(x):
+    ms = int(round(max(0, x) * 1000)); return f"{ms // 3600000:02d}:{ms // 60000 % 60:02d}:{ms // 1000 % 60:02d},{ms % 1000:03d}"
+
+def _chunks(text, n=84):
+    out, cur = [], ""
+    for w in text.split():
+        if cur and len(cur) + 1 + len(w) > n: out.append(cur); cur = w
+        else: cur = (cur + " " + w).strip()
+    return out + ([cur] if cur else [])
+
+def _two_lines(s):
+    if len(s) <= 42: return s
+    sp = [k for k, c in enumerate(s) if c == " "]
+    k = min(sp, key=lambda k: abs(k - len(s) / 2)) if sp else None
+    return s if k is None else s[:k] + "\n" + s[k + 1:]
+
+def write_captions(L, path):
+    """SRT from the sentence timings: one cue per sentence, long sentences split into two-line chunks."""
+    cues, g = [], 0.0
+    for name, d in L.items():
+        if name in TEXT:
+            for s0, s1, s in marks(name):
+                parts = _chunks(s); tot = sum(len(p) for p in parts) or 1; pos = s0
+                for p in parts:
+                    dd = (s1 - s0) * len(p) / tot; cues.append((g + LEAD + pos, g + LEAD + pos + dd, p)); pos += dd
+        g += d
+    path.write_text("".join(f"{k}\n{_ts(a)} --> {_ts(b)}\n{_two_lines(x)}\n\n" for k, (a, b, x) in enumerate(cues, 1)))
+    return len(cues)
+
+def make_thumbnail(path):
+    """1280x720: wordmark and date, the lead headline large, its map on the right."""
+    TW_, TH_ = 1280, 720; lead = ST[0]
+    im = Image.fromarray(PAPER_ARR).resize((TW_, TH_), Image.LANCZOS); d = ImageDraw.Draw(im)
+    m = mark(62); im.paste(m, (56, 40), m); wordmark(im, (132, 92), 56)
+    import datetime as _dt
+    day = _dt.datetime.strptime(ED.name, "%Y-%m-%d")
+    d.text((TW_ - 56, 88), f"{day.day} {day:%b %Y}", font=sans("SemiBold", 30), fill=SOFT, anchor="rs")
+    d.line([56, 124, TW_ - 56, 124], fill=INK, width=3)
+    tw = TW_ - 112
+    if lead["lat"] is not None:
+        MS = 430; mimg, (px, py) = flat_map(lead["lat"], lead["lon"], MS, MS, span=12)
+        msk = Image.new("L", (MS, MS), 0); ImageDraw.Draw(msk).rounded_rectangle([0, 0, MS - 1, MS - 1], 10, fill=255)
+        mx, my = TW_ - 56 - MS, 170; im.paste(mimg, (mx, my), msk)
+        d.ellipse([mx + px - 16, my + py - 16, mx + px + 16, my + py + 16], fill=PAPER)
+        d.ellipse([mx + px - 12, my + py - 12, mx + px + 12, my + py + 12], fill=ACC)
+        tw = mx - 56 - 40
+    fs = 96
+    while fs > 48 and len(wrap(d, lead["headline"], serif(600, fs), tw)) > 4: fs -= 4
+    y = 170
+    for ln in wrap(d, lead["headline"], serif(600, fs), tw):
+        d.text((56, y), ln, font=serif(600, fs), fill=INK); y += int(fs * 1.08)
+    d.rectangle([56, 618, 120, 624], fill=ACC)
+    d.text((56, 668), f"TOP STORY  ·  {lead['sources']} OUTLETS", font=sans("Bold", 28), fill=ACC, anchor="ls")
+    im.save(path)
+
 # ---------- compositing ----------
 def frame(states, sf, pin, t, gt, dur, has_ticker):
     arr = states(t) if callable(states) else states[sf(t)].copy()
+    if callable(pin): pin = pin(t)
     if has_ticker:
         off = int(gt * 110) % TW
         a = STRIP[:, off:off + (W - LABEL_W)][..., None]
@@ -356,4 +489,7 @@ if __name__ == "__main__":
                     "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(out) + ".part.mp4"], check=True)
     os.replace(str(out) + ".part.mp4", out)
     json.dump(L, open(ED / f"scene_lengths_{ARGS.audio}.json", "w"), indent=1)
+    print("captions:", write_captions(L, out.with_suffix(".srt")), "cues")
+    make_thumbnail(ED / "thumbnail.png")
+    (ED / "title.txt").write_text(yt_title(ST[0]["headline"], ED.name) + "\n")
     print("wrote", out)

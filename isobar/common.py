@@ -76,3 +76,27 @@ def unique_outlets(domains):
 def env(name, default=None):
     v = os.environ.get(name)
     return v if v not in (None, "") else default
+
+
+_NOSPLIT = {"mr", "mrs", "ms", "dr", "st", "jr", "sr", "no", "vs", "gen", "sen", "rep", "gov", "lt", "col", "prof", "capt", "sgt", "u.s", "u.k"}
+
+
+def sentences(text: str):
+    """Split narration into spoken sentences, without breaking on initials (Robert F. Kennedy) or titles (Sen.)."""
+    out, start = [], 0
+    for m in re.finditer(r"[.!?][\"”’)]*\s+(?=[A-Z\"“‘(0-9])", text or ""):
+        word = re.findall(r"[\w.]+$", text[start:m.start()])
+        w = word[0].lower() if word else ""
+        if len(w) == 1 or w in _NOSPLIT:
+            continue
+        out.append(text[start:m.end()].strip()); start = m.end()
+    tail = (text or "")[start:].strip()
+    return out + ([tail] if tail else [])
+
+
+def yt_title(headline: str, date: str) -> str:
+    """'Lead headline | Isobar News, 22 Nov 2026', at most 100 characters (YouTube's limit)."""
+    d = dt.datetime.strptime(date, "%Y-%m-%d")
+    tail = f" | Isobar News, {d.day} {d:%b %Y}"
+    h = headline if len(headline) + len(tail) <= 100 else headline[:100 - len(tail) - 1].rsplit(" ", 1)[0] + "…"
+    return h + tail

@@ -21,6 +21,7 @@ def dur(f):
 KOKORO_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
 KOKORO_FILES = ("kokoro-v1.0.onnx", "voices-v1.0.bin")
 VOICE = os.environ.get("ISOBAR_VOICE", "bm_george")
+GAP = 0.32  # seconds of silence between sentences
 FILTER = "highpass=f=80,acompressor=threshold=-18dB:ratio=3,loudnorm=I=-16:TP=-1.5,aresample=48000"
 
 
@@ -154,9 +155,21 @@ def main():
         lex = lexicon(ed)
         print(f"draft voice: {len(lex)} pronunciation fixes loaded")
 
+        import numpy as np
+        from .common import sentences
+
         def synth(n, t):
-            audio, sr = k.create(to_phonemes(k, t, lex), voice=VOICE, speed=1.0, lang="en-gb", is_phonemes=True)
-            sf.write(out / f"{n}_raw.wav", audio, sr)
+            """Voice each sentence separately, joined by a short pause, and record when each one is spoken.
+            The timings drive captions and the bullet reveals."""
+            parts, marks, pos, sr = [], [], 0.0, 24000
+            for s in sentences(t):
+                audio, sr = k.create(to_phonemes(k, s, lex), voice=VOICE, speed=1.0, lang="en-gb", is_phonemes=True)
+                if parts:
+                    parts.append(np.zeros(int(GAP * sr), dtype=audio.dtype)); pos += GAP
+                marks.append([round(pos, 3), round(pos + len(audio) / sr, 3), s]); pos += len(audio) / sr
+                parts.append(audio)
+            sf.write(out / f"{n}_raw.wav", np.concatenate(parts), sr)
+            timings[n] = marks
         engine = f"kokoro/{VOICE}"
     except Exception as e:  # never block a draft on the AI voice
         print(f"draft voice: Kokoro unavailable ({e!r}), using Festival")
@@ -166,13 +179,15 @@ def main():
                             str(out / f"{n}.txt"), "-o", str(out / f"{n}_raw.wav")], check=True)
         engine = "festival"
 
-    d = {}
+    d, timings = {}, {}
     for n, t in sc:  # sequential: Kokoro already uses every CPU core
         (out / f"{n}.txt").write_text(t)
         synth(n, t)
         subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(out / f"{n}_raw.wav"), "-af", FILTER, "-ac", "2", str(out / f"{n}.wav")], check=True)
         d[n] = dur(out / f"{n}.wav")
     json.dump(d, open(out / "durations.json", "w"), indent=1)
+    if timings:
+        json.dump(timings, open(out / "timings.json", "w"), indent=1, ensure_ascii=False)
     print(f"draft voice ({engine}):", round(sum(d.values()) / 60, 1), "min")
 
 

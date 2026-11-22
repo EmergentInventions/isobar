@@ -27,12 +27,18 @@ Use only facts present in that story's `summary`, `points` and `headlines`. Neve
 - `place`: "City, Country" if the story has a single location, otherwise null.
 - `country`: when `place` is null but the story happens in one country, that country (e.g. "Yemen"),
   shown under the panel instead of a map. Omit it when the story spans several countries.
+- `card` (optional, one per story): shown over the map when its sentence is spoken. Either a key figure
+  `{"kind": "number", "big": "$5 million", "label": "US reward offered for his arrest", "source": "US State Department"}`
+  (`big` at most 10 characters, `label` at most 90) or a quote
+  `{"kind": "quote", "text": "...", "by": "who said it"}` using only words that appear verbatim in the source.
+  Use only figures and quotes from that story's summary, points and headlines, attributed as the source does.
+  Leave it out when nothing is worth a card.
 
 ## 3. editorial.json shape
 ```json
 {
   "radar": [{"id": "<id from radar_pool>", "why": "<=110 chars"}, ...3],
-  "stories": {"<id>": {"headline": "", "facts": ["", "", ""], "narration": "", "category": "", "place": null, "country": null}},
+  "stories": {"<id>": {"headline": "", "facts": ["", "", ""], "narration": "", "category": "", "place": null, "country": null, "card": null}},
   "notes": "anything the host should know (sensitive stories, close calls, Anthropic-related items)"
 }
 ```
