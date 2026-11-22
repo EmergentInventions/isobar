@@ -84,3 +84,21 @@ Pick only a photo that:
 A specific Commons file can be used instead of a candidate: `"photo": "File:Name_on_Commons.jpg"`.
 When in doubt, leave it out: the map and card are enough. List the chosen IDs and any close calls in `notes`.
 The host can override in a reply ("3: use 3B", "5: no photo"): change `photo` in editorial.json and push.
+
+## 6. Short vertical clips (TikTok, Instagram Reels, YouTube Shorts)
+Add `shorts` to editorial.json: four clips, about 40–60 seconds each, voiced by the same AI voice with captions burned in.
+```json
+"shorts": [
+  {"slot": 1, "hook": "...", "parts": [{"id": "<top story 1 id>", "text": "..."}]},
+  {"slot": 2, "hook": "...", "parts": [{"id": "<top story 2 id>", "text": "..."}]},
+  {"slot": 3, "hook": "...", "parts": [{"id": "<top story 3 id>", "text": "..."}]},
+  {"slot": 4, "hook": "Three stories that got far less coverage today, but matter.",
+   "parts": [{"id": "<radar 1 id>", "text": "..."}, {"id": "<radar 2 id>", "text": "..."}, {"id": "<radar 3 id>", "text": "..."}]}
+]
+```
+- Slots 1–3 are the three most-covered stories, one per clip. Slot 4 is the Below the Radar roundup (posted later in the day).
+- `hook`: one sentence, at most 15 words, the single most striking fact, said first. It is the opening line, so no
+  "This is Isobar News", no question bait, no exaggeration; it must be true and attributed if the source attributes it.
+- `text`: 60–80 words for slots 1–3; 25–40 words per part for slot 4. Same rules as the narrations: only facts from that
+  story's sources, neutral, British English, attributed, written for the ear. The visuals (map, photo, card) come from
+  the story itself, so keep the key figure of the card in the text.
