@@ -15,7 +15,7 @@ from pathlib import Path
 UA = {"User-Agent": "IsobarNewsBot/0.2 (https://isobar.news; editorial photo selection)"}
 API = "https://commons.wikimedia.org/w/api.php?"
 REUSABLE = re.compile(r"^(CC BY(-SA)? [0-9.]+( [A-Za-z-]+)?|CC0( 1\.0)?|Public domain|PD[- ].*)$", re.I)
-NOT_PHOTO = re.compile(r"(?i)\b(map|flag|logo|coat of arms|emblem|seal|diagram|chart|graph|signature|locator|icon|poster|stamp|banknote|coin)\b|\.svg$|\.tif+$")
+NOT_PHOTO = re.compile(r"(?i)\b(map|maps|osm|openstreetmap|flag|logo|coat of arms|emblem|seal|diagram|chart|graph|infographic|transits|signature|locator|icon|poster|stamp|banknote|coin|plaque)\b|\.svg$|\.tif+$")
 PER_SUBJECT, MAX_SUBJECTS = 3, 2
 
 
@@ -48,7 +48,7 @@ def search(subject, width=320):
             continue
         out.append({"subject": subject, "title": title, "page": ii["descriptionurl"], "thumb": ii["thumburl"],
                     "license": lic, "artist": _clean(m.get("Artist", {}).get("value"))[:80] or "unknown",
-                    "date": _clean(m.get("DateTimeOriginal", {}).get("value"))[:10],
+                    "date": (re.findall(r"\d{4}(?:-\d\d(?:-\d\d)?)?", _clean(m.get("DateTimeOriginal", {}).get("value"))) or [""])[0],
                     "description": _clean(m.get("ImageDescription", {}).get("value"))[:160],
                     "width": ii.get("width"), "height": ii.get("height")})
         if len(out) == PER_SUBJECT: break
