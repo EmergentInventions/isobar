@@ -80,9 +80,10 @@ LETTER = dict(A="eɪ", B="biː", C="siː", D="diː", E="iː", F="ɛf", G="dʒiː
 
 
 def spell(word):
-    """'IMF' -> ˌaɪˌɛmˈɛf: letter names, main stress on the last letter, as a newsreader says it."""
+    """'FBI' -> ɛfbiːˈaɪ: letter names run together with one stress on the last letter, as a newsreader says it
+    (stressing every letter makes the voice pause between them)."""
     parts = [LETTER[c].replace("ˈ", "") for c in word]
-    return "".join("ˌ" + p for p in parts[:-1]) + "ˈ" + parts[-1]
+    return "".join(parts[:-1]) + "ˈ" + parts[-1]
 
 
 def say_money(m):
