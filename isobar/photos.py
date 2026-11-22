@@ -24,7 +24,9 @@ REUSABLE = re.compile(r"^(CC BY(-SA)? [0-9.]+( [A-Za-z-]+)?|CC0( 1\.0)?|Public d
 # applied to category and text-search results only; a subject's own Wikidata image is trusted (it may be an official poster)
 NOT_PHOTO = re.compile(r"(?i)\b(map|maps|osm|openstreetmap|flag|logo|coat of arms|emblem|seal|diagram|chart|graph|infographic|"
                        r"transits|signature|locator|icon|poster|stamp|banknote|coin|plaque)\b|\.svg$|\.tif+$|\.pdf$")
-PER_SUBJECT, MAX_SUBJECTS = 3, 2
+PER_SUBJECT, MAX_SUBJECTS = 5, 2
+# per subject: up to 1 Wikidata main image, 2 from its Commons category, 2 from text search (so good plain matches still show)
+QUOTA = {"wikidata": 1, "category": 2, "text": 2}
 II = dict(prop="imageinfo", iiprop="url|extmetadata|size", iiextmetadatafilter="LicenseShortName|Artist|DateTimeOriginal|ImageDescription")
 
 
@@ -79,10 +81,12 @@ def wikidata(subject):
     return q, hit.get("label", subject), hit.get("description", ""), imgs, cat
 
 
-def category_files(cat, n=12, width=320):
+def category_files(cat, names=(), n=40, width=320):
+    """Files in the subject's Commons category, those naming the subject first, then the most recent."""
     r = _api(action="query", generator="categorymembers", gcmtitle="Category:" + cat, gcmtype="file", gcmlimit=n,
              gcmsort="timestamp", gcmdir="desc", iiurlwidth=width, **II)
-    return [x for x in (_info(p) for p in r.get("query", {}).get("pages", {}).values()) if x and not NOT_PHOTO.search(x["title"])]
+    xs = [x for x in (_info(p) for p in r.get("query", {}).get("pages", {}).values()) if x and not NOT_PHOTO.search(x["title"])]
+    return sorted(xs, key=lambda x: (not names_in(x, names), x["date"] == "", "".join(chr(255 - ord(c)) for c in x["date"])))
 
 
 def text_search(subject, n=12, width=320):
@@ -92,12 +96,25 @@ def text_search(subject, n=12, width=320):
     return [x for x in (_info(p) for p in pages) if x and not NOT_PHOTO.search(x["title"])]
 
 
+def _fold(s):
+    import unicodedata
+    return "".join(ch for ch in unicodedata.normalize("NFKD", (s or "").lower()) if not unicodedata.combining(ch))
+
+
+def names_in(c, names):
+    """True if the file name or caption mentions any significant word of the subject (accents and case ignored)."""
+    text = _fold(c.get("title", "") + " " + c.get("description", ""))
+    words = {w for n in names for w in re.findall(r"[a-z0-9]{4,}", _fold(n))} - {"municipality", "governorate", "campus", "city", "strait"}
+    return any(w in text for w in words) if words else True
+
+
 def find(subject):
-    """Up to PER_SUBJECT candidates, strongest evidence first, each with a 'match' explaining why it is here."""
+    """Candidates per QUOTA, strongest evidence first, each with a 'match' explaining why it is here."""
     out, seen, query = [], set(), {"subject": subject, "wikidata": None}
-    def add(c, match):
-        if c and c["title"] not in seen and len(out) < PER_SUBJECT:
-            seen.add(c["title"]); out.append({**c, "subject": subject, "match": match})
+    used = {k: 0 for k in QUOTA}
+    def add(c, match, kind):
+        if c and c["title"] not in seen and used[kind] < QUOTA[kind] and len(out) < PER_SUBJECT:
+            seen.add(c["title"]); used[kind] += 1; out.append({**c, "subject": subject, "match": match})
     try:
         wd = wikidata(subject)
     except Exception as e:
@@ -105,11 +122,11 @@ def find(subject):
     if wd:
         q, label, desc, imgs, cat = wd
         query["wikidata"] = {"id": q, "label": label, "description": desc, "category": cat}
-        for f in imgs[:2]:
-            add(file_info(f), f"Wikidata main image of {label} ({q})")
+        for f in imgs[:1]:
+            add(file_info(f), f"Wikidata main image of {label} ({q})", "wikidata")
         if cat:
-            for c in category_files(cat): add(c, f"In Commons category “{cat}” (from Wikidata {q})")
-    for c in text_search(subject): add(c, f"Text search for “{subject}”: file name matches, not verified")
+            for c in category_files(cat, (subject, label)): add(c, f"In Commons category “{cat}” (from Wikidata {q})", "category")
+    for c in text_search(subject): add(c, f"Text search for “{subject}”: file name matches, not verified", "text")
     return out, query
 
 
@@ -161,10 +178,19 @@ def sheet(ed):
     order = qs["order"] or sorted({c["story"] for c in cands.values()}, key=lambda s: min(c["n"] for c in cands.values() if c["story"] == s))
     md = [f"# Photo candidates for {ed.name}", "",
           "★ = used in the video. Reply with e.g. `3: use 3B`, `5: no photo`, or `1: use File:Name_on_Commons.jpg`.",
-          "**Matched by** says how each image was found: a subject's *Wikidata main image* or *Commons category* is strong "
-          "evidence; a *text search* match only means words in the file name matched, so check it.", ""]
+          "Each image shows **✓/⚠**: whether its own file name or caption names what was searched for. ⚠ means look closely: "
+          "the caption may describe something else (e.g. a different ship).",
+          "**Matched by** says how it was found: a *Wikidata main image* or *Commons category* is good evidence but not proof; "
+          "a *text search* match only means words in the file name matched.", ""]
+    def check(c):
+        """Quick guide: does the file's own name or caption name what we searched for?"""
+        if c.get("match") == "Chosen by hand": return "Chosen by hand"
+        if names_in(c, [c["subject"]]): return f"✓ File name or caption names “{c['subject']}”"
+        if c.get("description") and not re.search(r"[A-Za-z]{3}", c["description"]):
+            return f"? Caption is not in English: check the image shows “{c['subject']}”"
+        return f"⚠ File name and caption don't mention “{c['subject']}”. Caption says: “{c.get('description', '')[:110] or 'nothing'}”"
     row = lambda pid, c: (f"| **{pid}**{' ★' if pid in pick else ''} | <img src=\"photos/{safe(pid)}.jpg\" width=\"240\"> | "
-                          f"[{c['title'][:70]}]({c['page']})<br>{c.get('description', '')[:120]}<br>"
+                          f"**{check(c)}**<br>[{c['title'][:70]}]({c['page']})<br>{c.get('description', '')[:120]}<br>"
                           f"{c['date'] or 'date unknown'} · {c['license']} · {c['artist']}<br>*Matched by: {c.get('match', '')}* |")
     for n, sid in enumerate(order, 1):
         md += [f"## {n}. {heads.get(sid, sid)}", ""]
