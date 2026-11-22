@@ -56,3 +56,25 @@ For each one not already in the file, check how espeak says it:
 If it is wrong for a British news reader (wrong stress, Anglicised foreign names, letters read as a word), add
 `"Name": "phonemes"` in the same IPA style. Use the established English pronunciation where one exists
 (Xi = ʃˈiː, Pentagon = pˈɛntəɡɒn). Prefer the short "a" for Arabic names (Riyadh = ɹɪjˈad): "ɑː" sounds like "ar". Years are converted automatically (2030 = "twenty thirty"). Keep entries; never delete one without a reason. Commit it with editorial.json.
+
+## 5. Photos (Wikimedia Commons, freely licensed, credited on screen)
+**a. Subjects, before writing editorial.json.** Once the 10 stories are chosen, write
+`editions/<DATE>/subjects.json` and push it on its own:
+```json
+{"order": ["<id of story 1>", "...", "<id of story 10>"], "subjects": {"<id>": ["Hakeem Jeffries"], "<id>": ["Strait of Hormuz"]}}
+```
+`order` is the on-screen order (the 7 in `top`, then your 3 picks). Up to 2 subjects per story, and only:
+- named public figures in their public role (leaders, ministers, officials, executives, named athletes or campaigners);
+- named places, landmarks, buildings or vessels (Antalya, Strait of Hormuz, Microsoft Redmond campus).
+Never topics or events ("protest", "vaccine", "missile strike", "glyphosate"), victims, suspects, private individuals
+or children. Leave a story's list empty if nothing fits. A GitHub workflow then commits up to 3 candidates per subject
+as `editions/<DATE>/photos/<story><letter>.jpg` (e.g. `3B.jpg`) with details in `photos.json` (usually 2–4 minutes).
+
+**b. Choose, then write editorial.json.** `git pull` until `photos.json` exists (up to 15 minutes; if it never
+comes, carry on without photos). Look at every candidate image. For each story set `"photo": "3B"` or leave it out.
+Pick only a photo that:
+- clearly shows the named subject (check the image and its title/description) and is reasonably recent for a person;
+- is neutral and not misleading in the story's context (no unrelated events, no old crisis images, no injuries or bodies);
+- is a real photograph, not a map, logo, chart, poster or screenshot.
+When in doubt, leave it out: the map and card are enough. List the chosen IDs and any close calls in `notes`.
+The host can override in a reply ("3: use 3B", "5: no photo"): change `photo` in editorial.json and push.

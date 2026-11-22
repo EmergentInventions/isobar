@@ -22,6 +22,7 @@ ASSETS = Path(__file__).resolve().parent.parent / "assets"
 S = json.load(open(ED / "script.json")); ST = S["stories"]; N = len(ST)
 DUR = json.load(open(AUD / "durations.json"))
 TIM = json.load(open(AUD / "timings.json")) if (AUD / "timings.json").exists() else {}
+PHOTOS = json.load(open(ED / "photos.json")) if (ED / "photos.json").exists() else {}
 TEXT = {"01_intro": S["intro"]["narration"], "08a_radar": S.get("radar_bumper", ""), "99_outro": S["outro"]["narration"],
         **{f"{i+2:02d}_story": s["narration"] for i, s in enumerate(S["stories"])}}
 
@@ -345,15 +346,32 @@ def sc_story(i):
         r = when_said(name, f)
         if r is None: r = 0.7 + dur * 0.6 * j / max(1, len(st["facts"]))
         r = min(max(r, prev + 1.2, 0.7), dur - 1.5); reveal.append(r); prev = r
-    # optional card (key figure or quote), crossfades over the map when its sentence is spoken
+    # panel sequence: map -> photo (when its subject is mentioned) -> card (when its figure or quote is spoken)
     card = st.get("card"); card_img = make_card(card, MWd, MH) if card else None; tc = None
     if card_img is not None and dur > 12:
         w_ = when_said(name, card.get("text") or (card.get("label", "") + " " + card.get("big", "")))
         tc = min(max(w_ or dur * 0.5, 5.0, dur * 0.35), dur - 5)
+    pid = st.get("photo"); ph = PHOTOS.get(pid) if pid else None; pf = ED / "photos" / f"use_{pid}.jpg"
+    photo_big, tp = None, None
+    if ph and pf.exists() and dur > 12:
+        tp = max(6.0, when_said(name, ph["subject"]) or dur * 0.3)
+        if tc is not None and tp > tc - 6:                 # keep at least 6 s of photo before the card
+            tp = max(6.0, tc - 8)
+            if tc - tp < 5: tc = tp + 7 if tp + 7 < dur - 4 else None
+        if tp < dur - 5:
+            photo_big = cover(Image.open(pf).convert("RGB"), int(MWd * 1.12), int(MH * 1.12))
+            credit_band = photo_credit(ph, MWd, MH)
+        else:
+            tp = None
     PIN = [None]
     def view(t):  # continent to region over 5 s (ease-out), then a slow drift closer
         e = min(1, t / 5.0); e = 1 - (1 - e) ** 3
         return 1 + (zmax - 1.35) * e + 0.35 * max(0, t - 5.0) / max(1, dur - 5.0)
+    def photo_at(t):  # slow push-in, credit on top
+        z = 1 + 0.10 * min(1, (t - tp) / max(1, (tc or dur) - tp))
+        cw, ch = MWd * 1.12 / z, MH * 1.12 / z; x0 = (MWd * 1.12 - cw) / 2; y0 = (MH * 1.12 - ch) / 2
+        im = photo_big.resize((MWd, MH), Image.BILINEAR, box=(x0, y0, x0 + cw, y0 + ch)); im.paste(credit_band, (0, 0), credit_band)
+        return im
     def at(t):
         arr = states[sum(1 for r in reveal if t >= r)].copy()
         panel, pin_xy = None, None
@@ -362,10 +380,11 @@ def sc_story(i):
             x0 = min(max(bx - cw / 2, 0), MWd * ZM - cw); y0 = min(max(by - ch / 2, 0), MH * ZM - ch)
             panel = big.resize((MWd, MH), Image.BILINEAR, box=(x0, y0, x0 + cw, y0 + ch))
             pin_xy = (MX + int((bx - x0) * MWd / cw), MY + int((by - y0) * MH / ch)) if has_pin else None
-        if tc is not None and t > tc:
-            a = min(1.0, (t - tc) / 0.5)
+        for t0, layer in ((tp, photo_at if photo_big is not None else None), (tc, (lambda t: card_img) if card_img is not None else None)):
+            if t0 is None or layer is None or t <= t0: continue
+            a = min(1.0, (t - t0) / 0.5)
             under = panel if panel is not None else Image.fromarray(arr[MY:MY + MH, MX:MX + MWd])
-            panel = card_img if a >= 1 else Image.blend(under, card_img, a)
+            top = layer(t); panel = top if a >= 1 else Image.blend(under, top, a)
             if a > 0.3: pin_xy = None
         if panel is not None:
             region = Image.fromarray(arr[MY:MY + MH, MX:MX + MWd]); region.paste(panel, (0, 0), PMASK)
@@ -373,6 +392,22 @@ def sc_story(i):
         PIN[0] = pin_xy
         return arr
     return at, None, (lambda t: PIN[0]), dur, True
+
+def cover(im, w, h):
+    """Scale and crop to fill w x h; tall photos are cropped from near the top (faces), wide ones from the centre."""
+    s = max(w / im.width, h / im.height); im = im.resize((max(w, round(im.width * s)), max(h, round(im.height * s))), Image.LANCZOS)
+    x = (im.width - w) // 2; y = int((im.height - h) * (0.25 if im.height > im.width else 0.5))
+    return im.crop((x, y, x + w, y + h))
+
+def photo_credit(ph, w, h):
+    """Translucent band along the bottom of the panel with the photographer and licence."""
+    band = Image.new("RGBA", (w, h), (0, 0, 0, 0)); d = ImageDraw.Draw(band)
+    d.rectangle([0, h - 34, w, h], fill=(22, 24, 29, 150))
+    txt = f"Photo: {ph['artist']} / Wikimedia Commons, {ph['license']}"
+    f = sans("Regular", 15)
+    while d.textlength(txt, font=f) > w - 24 and len(txt) > 20: txt = txt[:-2]
+    d.text((12, h - 17), txt, font=f, fill=(247, 244, 238, 235), anchor="lm")
+    return band
 
 def make_card(c, w, h):
     """Key figure ("big" + "label") or quote ("text" + "by") on the panel paper."""

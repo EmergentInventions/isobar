@@ -102,7 +102,7 @@ def build(d, date, strapline=None):
             "narration": e["narration"],
             "place": e.get("place") if lat is not None else None, "country": e.get("country"), "countries": e.get("countries"), "lat": lat, "lon": lon,
             "sources": n, "outlets": s["outlets"], "outlet_line": feature_line(s["outlets"], n),
-            "why": why or e.get("why") or "", "card": e.get("card"),
+            "why": why or e.get("why") or "", "card": e.get("card"), "photo": e.get("photo"),
         })
         all_outlets += [o for o in s["outlets"] if o not in all_outlets]
     day = dt.datetime.strptime(date, "%Y-%m-%d")
