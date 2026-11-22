@@ -63,18 +63,24 @@ If it is wrong for a British news reader (wrong stress, Anglicised foreign names
 ```json
 {"order": ["<id of story 1>", "...", "<id of story 10>"], "subjects": {"<id>": ["Hakeem Jeffries"], "<id>": ["Strait of Hormuz"]}}
 ```
-`order` is the on-screen order (the 7 in `top`, then your 3 picks). Up to 2 subjects per story, and only:
+`order` is the on-screen order (the 7 in `top`, then your 3 picks). Up to 2 subjects per story, the main person
+first, written as their full real name as Wikipedia would title it ("Fausto Isidro Meza Flores", not "El Chapo
+Isidro"; "Benjamin Netanyahu", not "Netanyahu"), because each subject is looked up on Wikidata first. Only:
 - named public figures in their public role (leaders, ministers, officials, executives, named athletes or campaigners);
 - named places, landmarks, buildings or vessels (Antalya, Strait of Hormuz, Microsoft Redmond campus).
 Never topics or events ("protest", "vaccine", "missile strike", "glyphosate"), victims, suspects, private individuals
 or children. Leave a story's list empty if nothing fits. A GitHub workflow then commits up to 3 candidates per subject
 as `editions/<DATE>/photos/<story><letter>.jpg` (e.g. `3B.jpg`) with details in `photos.json` (usually 2–4 minutes).
+Each candidate says how it matched (`match`): the subject's Wikidata main image or Commons category is strong
+evidence; a text-search match only means words in the file name matched (e.g. a different ship), so verify it.
 
 **b. Choose, then write editorial.json.** `git pull` until `photos.json` exists (up to 15 minutes; if it never
 comes, carry on without photos). Look at every candidate image. For each story set `"photo": "3B"` or leave it out.
 Pick only a photo that:
 - clearly shows the named subject (check the image and its title/description) and is reasonably recent for a person;
 - is neutral and not misleading in the story's context (no unrelated events, no old crisis images, no injuries or bodies);
-- is a real photograph, not a map, logo, chart, poster or screenshot.
+- is a real photograph, not a map, logo, chart or screenshot (an official portrait or wanted poster that is the
+  subject's Wikidata main image is fine).
+A specific Commons file can be used instead of a candidate: `"photo": "File:Name_on_Commons.jpg"`.
 When in doubt, leave it out: the map and card are enough. List the chosen IDs and any close calls in `notes`.
 The host can override in a reply ("3: use 3B", "5: no photo"): change `photo` in editorial.json and push.

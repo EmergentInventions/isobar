@@ -3,6 +3,7 @@ import argparse, json, math, os, re, sys, subprocess
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from isobar.common import sentences, yt_title
+from isobar.photos import safe as photo_safe
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import matplotlib
@@ -351,9 +352,9 @@ def sc_story(i):
     if card_img is not None and dur > 12:
         w_ = when_said(name, card.get("text") or (card.get("label", "") + " " + card.get("big", "")))
         tc = min(max(w_ or dur * 0.5, 5.0, dur * 0.35), dur - 5)
-    pid = st.get("photo"); ph = PHOTOS.get(pid) if pid else None; pf = ED / "photos" / f"use_{pid}.jpg"
+    pid = st.get("photo"); ph = PHOTOS.get(pid) if pid else None; pf = ED / "photos" / f"use_{photo_safe(pid)}.jpg" if pid else None
     photo_big, tp = None, None
-    if ph and pf.exists() and dur > 12:
+    if ph and pf and pf.exists() and dur > 12:
         tp = max(6.0, when_said(name, ph["subject"]) or dur * 0.3)
         if tc is not None and tp > tc - 6:                 # keep at least 6 s of photo before the card
             tp = max(6.0, tc - 8)
