@@ -71,14 +71,21 @@ def file_info(title, width=320):
 
 
 def wikidata(subject):
-    """(Q-id, label, description, [P18 image file names], Commons category or None) for the best match, else None."""
+    """(Q-id, label, description, [P18 image file names], Commons category or None, [other names]) for the best match.
+    Other names = aliases in any language plus 'name' statements (P2561, P1448), e.g. a ship's former names."""
     r = _api(WIKIDATA, action="wbsearchentities", search=subject, language="en", type="item", limit=1)
     if not r.get("search"): return None
     hit = r["search"][0]; q = hit["id"]
-    ent = _api(WIKIDATA, action="wbgetentities", ids=q, props="claims")["entities"][q]["claims"]
-    imgs = [c["mainsnak"]["datavalue"]["value"] for c in ent.get("P18", []) if "datavalue" in c["mainsnak"]]
-    cat = next((c["mainsnak"]["datavalue"]["value"] for c in ent.get("P373", []) if "datavalue" in c["mainsnak"]), None)
-    return q, hit.get("label", subject), hit.get("description", ""), imgs, cat
+    ent = _api(WIKIDATA, action="wbgetentities", ids=q, props="claims|aliases|labels")["entities"][q]
+    cl = ent.get("claims", {})
+    val = lambda c: c["mainsnak"].get("datavalue", {}).get("value")
+    imgs = [val(c) for c in cl.get("P18", []) if val(c)]
+    cat = next((val(c) for c in cl.get("P373", []) if val(c)), None)
+    names = {a["value"] for al in ent.get("aliases", {}).values() for a in al} | {l["value"] for l in ent.get("labels", {}).values()}
+    for p in ("P2561", "P1448", "P1449"):
+        names |= {v["text"] for v in (val(c) for c in cl.get(p, [])) if isinstance(v, dict) and v.get("text")}
+    label = hit.get("label", subject)
+    return q, label, hit.get("description", ""), imgs, cat, sorted(n for n in names if n and n != label)[:30]
 
 
 def category_files(cat, names=(), n=40, width=320):
@@ -114,14 +121,17 @@ def find(subject):
     used = {k: 0 for k in QUOTA}
     def add(c, match, kind):
         if c and c["title"] not in seen and used[kind] < QUOTA[kind] and len(out) < PER_SUBJECT:
-            seen.add(c["title"]); used[kind] += 1; out.append({**c, "subject": subject, "match": match})
+            seen.add(c["title"]); used[kind] += 1
+            wd_ = query.get("wikidata") or {}
+            out.append({**c, "subject": subject, "match": match, "wikidata": wd_.get("id"), "label": wd_.get("label"),
+                        "other_names": wd_.get("other_names", [])})
     try:
         wd = wikidata(subject)
     except Exception as e:
         print(f"photos: wikidata lookup failed for {subject!r}: {e!r}"); wd = None
     if wd:
-        q, label, desc, imgs, cat = wd
-        query["wikidata"] = {"id": q, "label": label, "description": desc, "category": cat}
+        q, label, desc, imgs, cat, others = wd
+        query["wikidata"] = {"id": q, "label": label, "description": desc, "category": cat, "other_names": others}
         for f in imgs[:1]:
             add(file_info(f), f"Wikidata main image of {label} ({q})", "wikidata")
         if cat:
@@ -186,6 +196,10 @@ def sheet(ed):
         """Quick guide: does the file's own name or caption name what we searched for?"""
         if c.get("match") == "Chosen by hand": return "Chosen by hand"
         if names_in(c, [c["subject"]]): return f"✓ File name or caption names “{c['subject']}”"
+        alt = next((n for n in c.get("other_names", []) if names_in(c, [n])), None)
+        if alt:
+            return (f"✓ Caption names “{alt}”, listed on Wikidata ({c.get('wikidata')}) as another name for "
+                    f"“{c.get('label') or c['subject']}”")
         if c.get("description") and not re.search(r"[A-Za-z]{3}", c["description"]):
             return f"? Caption is not in English: check the image shows “{c['subject']}”"
         return f"⚠ File name and caption don't mention “{c['subject']}”. Caption says: “{c.get('description', '')[:110] or 'nothing'}”"
