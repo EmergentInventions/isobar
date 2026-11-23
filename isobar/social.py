@@ -16,7 +16,11 @@ from pathlib import Path
 
 SITE = "isobar.news"
 URL = "https://isobar.news"
-YT = "Isobar News on YouTube"
+YT_HANDLE = "@IsobarNews"
+YT_URL = "https://youtube.com/@IsobarNews"
+MORE = f"Ten stories, once a day: the full bulletin is on YouTube ({YT_HANDLE}) and at {SITE}"
+MORE_REPLY = f"Ten stories, once a day: the full bulletin is on YouTube {YT_URL}"
+KAGI = "Attribution: story clustering and summaries adapted from Kagi News, licensed under CC BY-NC 4.0."
 
 # Platform limits (characters). X counts any link as 23. Instagram allows at most 5 hashtags; we use 3.
 LIMITS = {"x": 280, "bluesky": 300, "threads": 500, "instagram": 2200, "tiktok": 4000, "facebook": 5000,
@@ -92,9 +96,12 @@ def credits(sts, photos, source, ed=Path('.')):
         pid = st.get("photo")
         if not pid: continue
         ph = photos.get(pid)
-        if ph: lines.append(f"Photo: {ph.get('artist') or 'unknown'} / Wikimedia Commons, {ph.get('license')}")
+        if ph:
+            artist = ph.get("artist") or ""
+            if not artist or re.search(r"(?i)unknown", artist): artist = "Unknown author"
+            lines.append(f"Photo: {artist} / Wikimedia Commons, {ph.get('license')}")
         elif pid.startswith("File:") and (ed / "photos" / f"use_{safe(pid)}.jpg").exists(): lines.append(f"Photo: Wikimedia Commons, {pid} (see file page for author and licence)")
-    if source == "kagi": lines.append("Story summaries adapted from Kagi News (CC BY-NC 4.0).")
+    if source == "kagi": lines.append(KAGI)
     return "\n".join(lines)
 
 
@@ -108,16 +115,19 @@ def first_sentences(text, n_chars):
 
 
 def replies(cred, limit):
-    """Credits as one or more replies, each within the platform limit."""
-    if not cred: return []
-    chunks, cur = [], ""
-    for line in cred.split("\n"):
+    """Replies to paste under a short post: first the YouTube line and the Kagi attribution,
+    then photo credits, each reply within the platform limit."""
+    lines = [l for l in (cred or "").split("\n") if l]
+    first = [MORE_REPLY] + [l for l in lines if l == KAGI]
+    rest = [l for l in lines if l != KAGI]
+    chunks, cur = ["\n\n".join(first)], ""
+    for line in rest:
         line = fit(line, limit)
         if cur and len(cur) + 1 + len(line) > limit: chunks.append(cur); cur = line
         else: cur = (cur + "\n" + line).strip()
-    chunks.append(cur)
+    if cur: chunks.append(cur)
     names = ["First", "Second", "Third", "Fourth", "Fifth", "Sixth"]
-    return [f"{names[min(i, 5)]} reply (credits):\n{c}" for i, c in enumerate(chunks)]
+    return [f"{names[min(i, 5)]} reply{'' if i == 0 else ' (photo credits)'}:\n{c}" for i, c in enumerate(chunks)]
 
 
 def build(ed):
@@ -155,7 +165,7 @@ def build(ed):
                                " ".join(tags_for([], TAGS["threads"]))], LIMITS["threads"], squeeze=1)
     long_body = [f"Isobar News, {day}", method, f"Most covered today:\n{list_top}", f"Below the Radar:\n{list_radar}",
                  f"Drawn from reporting by {n_out} outlets." if n_out else "",
-                 f"Watch the full bulletin: {URL} ({YT})"]
+                 f"Watch the full bulletin on YouTube ({YT_HANDLE}) or at {URL}"]
     bul["facebook"] = assemble(long_body + [credits(sts, photos, src, ed)], LIMITS["facebook"], squeeze=2)
     bul["linkedin"] = assemble(long_body + [" ".join(tags_for(top[:2], TAGS["linkedin"])), credits(sts, photos, src, ed)],
                                LIMITS["linkedin"], squeeze=2)
@@ -170,20 +180,20 @@ def build(ed):
         is_radar = len(cs) > 1
         body = ("\n".join(f"{k}. {s['headline']}" for k, s in enumerate(cs, 1)) if is_radar
                 else sh["parts"][0]["text"].strip())
-        short_body = body if is_radar else first_sentences(body, 330)
+        short_body = body if is_radar else first_sentences(body, 280)
         cred = credits(cs, photos, src, ed)
-        more = f"Ten stories, once a day: the full bulletin is on YouTube (Isobar News) and at {SITE}"
+        more = MORE
         p = {}
         p["tiktok"] = assemble([hook, body, more, " ".join(tags_for(cs, TAGS["tiktok"])), cred], LIMITS["tiktok"], squeeze=1)
-        p["instagram"] = assemble([hook, body, f"Full bulletin: link in bio ({SITE})", " ".join(tags_for(cs, TAGS["instagram"])), cred],
+        p["instagram"] = assemble([hook, body, more, " ".join(tags_for(cs, TAGS["instagram"])), cred],
                                   LIMITS["instagram"], squeeze=1)
         yt_s_title = fit(hook.rstrip(".") + " #Shorts", LIMITS["youtube_title"])
         p["youtube"] = (f"SHORTS TITLE ({len(yt_s_title)}/100):\n{yt_s_title}\n\nSHORTS DESCRIPTION:\n"
                         + assemble([body, more, " ".join(tags_for(cs, TAGS["youtube"])), cred], LIMITS["youtube"], squeeze=0))
-        p["facebook"] = assemble([hook, body, f"Full bulletin: {URL}", cred], LIMITS["facebook"], squeeze=1)
-        p["linkedin"] = assemble([hook, body, f"Full bulletin: {URL}", " ".join(tags_for(cs, TAGS["linkedin"])), cred],
+        p["facebook"] = assemble([hook, body, more, cred], LIMITS["facebook"], squeeze=1)
+        p["linkedin"] = assemble([hook, body, more, " ".join(tags_for(cs, TAGS["linkedin"])), cred],
                                  LIMITS["linkedin"], squeeze=1)
-        p["threads"] = assemble([hook, short_body, f"Full bulletin: {SITE}", " ".join(tags_for(cs, TAGS["threads"]))],
+        p["threads"] = assemble([hook, short_body, more, " ".join(tags_for(cs, TAGS["threads"]))],
                                 LIMITS["threads"], squeeze=1)
         lst = "\n".join(f"• {s['headline']}" for s in cs) if is_radar else ""
         p["x"] = first_fitting([[hook, lst, f"Full bulletin: {URL}", " ".join(tags_for(cs, TAGS["x"]))],
