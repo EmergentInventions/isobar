@@ -196,12 +196,12 @@ def post_text(sh, R, story_by_id):
     lines = [sh["hook"], ""]
     if len(sts) > 1:
         lines += [f"{k}. {st['headline']}" for k, st in enumerate(sts, 1)] + [""]
-    lines += ["Ten stories, once a day: the full bulletin is on YouTube (Isobar News) and at isobar.news", "", " ".join(tags), ""]
+    lines += ["Ten stories, once a day: the full bulletin is on YouTube (@IsobarNews) and at isobar.news", "", " ".join(tags), ""]
     for st in sts:
         ph = R.PHOTOS.get(st.get("photo")) if st.get("photo") else None
         if ph: lines.append(f"Photo: {ph['artist']} / Wikimedia Commons, {ph['license']}")
     if R.S.get("source") == "kagi":
-        lines.append("Story summaries adapted from Kagi News (CC BY-NC 4.0).")
+        lines.append("Attribution: story clustering and summaries adapted from Kagi News, licensed under CC BY-NC 4.0.")
     return "\n".join(lines) + "\n"
 
 
