@@ -82,7 +82,7 @@ def auto_story(s, label_cat):
             "place": s.get("location")}
 
 
-WPM, SCENE_PAD = 128, 1.6   # measured on Kokoro drafts: words per minute, and seconds of padding per scene
+WPM, SCENE_PAD = 136, 1.6   # calibrated on the 27 Nov v2 pilot (983 words, 15 scenes, 7:40)
 
 
 def est_minutes(texts):
