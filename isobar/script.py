@@ -81,6 +81,19 @@ def auto_story(s, label_cat):
             "place": s.get("location")}
 
 
+def intro_text(spoken, n_top, n_radar, n_all, teaser=None):
+    """Hook in four parts: promise (what you get), proof (how it was chosen), persona (who it's for), plan (teaser).
+    The on-screen rundown of every headline covers the rest of the plan."""
+    total = n_top + n_radar
+    t = (f"This is Isobar News for {spoken}. {words(total).capitalize()} stories that matter today. "
+         f"First, the {words(n_top)} most widely covered, ranked by how many of the {words(n_all)} outlets "
+         f"in today's edition reported them. Then {words(n_radar)} that got far less attention, "
+         "but could matter just as much. No spin: every claim is attributed to whoever made it.")
+    if teaser:
+        t += " " + teaser.strip()
+    return t + " Here's the news."
+
+
 def build(d, date, strapline=None):
     c = load(d / "candidates.json")
     ed = load(d / "editorial.json") if (d / "editorial.json").exists() else {}
@@ -109,12 +122,10 @@ def build(d, date, strapline=None):
     nice = f"{day:%A} {day.day} {day:%B %Y}"
     spoken = f"{day:%A} the {num2words(day.day, to='ordinal')} of {day:%B}"
     n_all = len(all_outlets)
+    n_top = sum(1 for x in stories if x["segment"] == "top")
     script = {
-        "show": "Isobar.News", "date": nice, "strapline": strapline, "source": c["source"],
-        "intro": {"narration": ed.get("intro") or (
-            f"This is Isobar News for {spoken}. We start with the seven stories that news outlets around the world "
-            "covered most today, and then three that got far less attention, but could matter just as much. "
-            "Here's the news.")},
+        "show": "Isobar.News", "title_lead": ed.get("title_lead"), "date": nice, "strapline": strapline, "source": c["source"],
+        "intro": {"narration": ed.get("intro") or intro_text(spoken, n_top, len(stories) - n_top, n_all, ed.get("teaser"))},
         "radar_bumper": ed.get("radar_bumper") or ("Now, three stories from below the radar. They got much less "
                                                    "coverage, but each could make a real difference to people's lives."),
         "outro": {"narration": ed.get("outro") or (

@@ -531,7 +531,7 @@ def make_thumbnail(path):
     for ln in wrap(d, lead["headline"], serif(600, fs), tw):
         d.text((56, y), ln, font=serif(600, fs), fill=INK); y += int(fs * 1.08)
     d.rectangle([56, 618, 120, 624], fill=ACC)
-    d.text((56, 668), f"TOP STORY  ·  {lead['sources']} OUTLETS", font=sans("Bold", 28), fill=ACC, anchor="ls")
+    d.text((56, 668), f"TOP STORY  ·  + {len(ST) - 1} MORE STORIES", font=sans("Bold", 28), fill=ACC, anchor="ls")
     im.save(path)
 
 # ---------- compositing ----------
@@ -609,5 +609,5 @@ if __name__ == "__main__":
     json.dump(L, open(ED / f"scene_lengths_{ARGS.audio}.json", "w"), indent=1)
     print("captions:", write_captions(L, out.with_suffix(".srt")), "cues")
     make_thumbnail(ED / "thumbnail.png")
-    (ED / "title.txt").write_text(yt_title(ST[0]["headline"], ED.name) + "\n")
+    (ED / "title.txt").write_text(yt_title(S.get("title_lead") or ST[0]["headline"], ED.name, len(ST) - 1) + "\n")
     print("wrote", out)

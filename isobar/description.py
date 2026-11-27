@@ -17,7 +17,7 @@ def main():
     for k, v in L.items():
         at[k] = t; t += v
     ntop = sum(1 for x in s["stories"] if x["segment"] == "top")
-    out = [yt_title(s["stories"][0]["headline"], ed.name), "", "Chapters", "0:00 Today's stories"]
+    out = [yt_title(s.get("title_lead") or s["stories"][0]["headline"], ed.name, len(s["stories"]) - 1), "", "Chapters", "0:00 Today's stories"]
     for i, st in enumerate(s["stories"]):
         if i == ntop and "08a_radar" in at:
             out.append(f"{mmss(at['08a_radar'])} Below the Radar")
