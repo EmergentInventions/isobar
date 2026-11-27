@@ -8,9 +8,10 @@ import json
 import re
 from pathlib import Path
 
-LOADED = ["slammed", "slams", "shocking", "regime", "blasted", "blasts", "outrage", "outrageous", "disaster",
+LOADED = [  # spectrum labels are checked separately below
+"slammed", "slams", "shocking", "regime", "blasted", "blasts", "outrage", "outrageous", "disaster",
           "devastating", "horrific", "brutal", "chaos", "chaotic", "radical", "extremist", "controversial",
-          "so-called", "mere", "finally", "admits", "claims victory", "far-right", "far-left", "hardline"]
+          "so-called", "mere", "finally", "admits", "claims victory", "hardline"]
 ATTRIBUTION = re.compile(r"\b(says?|said|according to|reports?|reported|told|announced|stated|confirmed|"
                          r"estimates?|found|shows?|showed|argues?|argued|warned|warns)\b", re.I)
 MAX_RUNTIME = 10 * 60      # seconds; the format aims for about ten minutes
@@ -45,7 +46,11 @@ def run(ed: Path, audio: str):
         if "?" in st["headline"]: probs.append("question mark in headline")
         if len(st["facts"]) != 3: probs.append(f"{len(st['facts'])} facts (need 3)")
         probs += [f"fact {k} is {len(f)} chars (max 90)" for k, f in enumerate(st["facts"], 1) if len(f) > 90]
-        if not 90 <= wc <= 150: probs.append(f"narration {wc} words (90-150)")
+        lo, hi = (55, 125) if (st.get("card") or {}).get("kind") == "framing" else (55, 105)
+        if not lo <= wc <= hi: probs.append(f"spoken {wc} words ({lo}-{hi}, including 'what next')")
+        if st["segment"] == "top" and not st.get("next"): probs.append("no 'what next' line")
+        if re.search(r"\b(far|hard|extreme|ultra|radical)[- ](right|left)\b", n + " " + st["headline"] + " " + " ".join(st["facts"]), re.I):
+            probs.append("spectrum label (far-right etc.): name the party and its policy instead")
         hits = [w for w in LOADED if re.search(rf"\b{re.escape(w)}\b", n + " " + st["headline"], re.I)]
         if hits: probs.append("loaded words: " + ", ".join(hits))
         if not ATTRIBUTION.search(n): probs.append("no attribution verb (says, according to…)")
@@ -55,7 +60,8 @@ def run(ed: Path, audio: str):
     lf = ed / f"scene_lengths_{audio}.json"
     if lf.exists():
         total = sum(json.load(open(lf)).values())
-        add(total <= MAX_RUNTIME, "Runtime at most 10:00", f"{int(total // 60)}:{int(total % 60):02d}")
+        cap = (s.get("promise_min") or MAX_RUNTIME / 60) * 60
+        add(total <= cap, f"Runtime keeps the promise (under {int(cap // 60)} min)", f"{int(total // 60)}:{int(total % 60):02d}")
 
     warns = sum(r[0] == "WARN" for r in rows)
     out = [f"# Acceptance checks: {ed.name}", "", f"{len(rows) - warns} passed, {warns} to look at.", "",

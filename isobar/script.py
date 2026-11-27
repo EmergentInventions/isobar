@@ -9,6 +9,7 @@ editorial.json shape:
 """
 import argparse
 import datetime as dt
+import math
 import re
 
 import geonamescache
@@ -81,17 +82,24 @@ def auto_story(s, label_cat):
             "place": s.get("location")}
 
 
-def intro_text(spoken, n_top, n_radar, n_all, teaser=None):
-    """Hook in four parts: promise (what you get), proof (how it was chosen), persona (who it's for), plan (teaser).
-    The on-screen rundown of every headline covers the rest of the plan."""
-    total = n_top + n_radar
-    t = (f"This is Isobar News for {spoken}. {words(total).capitalize()} stories that matter today. "
-         f"First, the {words(n_top)} most widely covered, ranked by how many of the {words(n_all)} outlets "
-         f"in today's edition reported them. Then {words(n_radar)} that got far less attention, "
-         "but could matter just as much. No spin: every claim is attributed to whoever made it.")
+WPM, SCENE_PAD = 128, 1.6   # measured on Kokoro drafts: words per minute, and seconds of padding per scene
+
+
+def est_minutes(texts):
+    """Spoken length estimate in minutes, including scene padding and the sting."""
+    return (sum(len(t.split()) for t in texts) / WPM * 60 + SCENE_PAD * len(texts) + 3.2) / 60
+
+
+def intro_text(spoken, n_top, n_radar, n_all, minutes=None, teaser=None):
+    """Hook: promise (what you get, and how long), proof (how it was chosen), persona (who it's for), then a teaser.
+    The on-screen rundown of every headline is the plan."""
+    when = f"Today's news in under {words(minutes)} minutes. " if minutes else ""
+    t = (f"This is Isobar News for {spoken}. {when}The {words(n_top)} stories most widely covered across "
+         f"{words(n_all)} outlets, and {words(n_radar)} that got far less attention. "
+         "Every claim attributed, no spin.")
     if teaser:
         t += " " + teaser.strip()
-    return t + " Here's the news."
+    return t
 
 
 def build(d, date, strapline=None):
@@ -99,7 +107,12 @@ def build(d, date, strapline=None):
     ed = load(d / "editorial.json") if (d / "editorial.json").exists() else {}
     pool = {s["id"]: s for s in c["radar_pool"]}
     radar = ed.get("radar") or [{"id": i, "why": ""} for i in c["radar_default"]]
-    chosen = [(s, "top", None) for s in c["top"]] + [(pool[r["id"]], "radar", r.get("why")) for r in radar if r["id"] in pool]
+    top_ = [(s, "top", None) for s in c["top"]]
+    rad_ = [(pool[r["id"]], "radar", r.get("why")) for r in radar if r["id"] in pool]
+    ra = ed.get("radar_after", 3)          # play Below the Radar after the first `ra` top stories (about 3 minutes in)
+    ra = max(0, min(int(ra), len(top_)))
+    chosen = top_[:ra] + rad_ + top_[ra:]
+    framing = ed.get("framing") or {}
     stories, all_outlets = [], []
     for k, (s, seg, why) in enumerate(chosen):
         e = {**auto_story(s, s["category"].upper()), **ed.get("stories", {}).get(s["id"], {})}
@@ -110,12 +123,22 @@ def build(d, date, strapline=None):
         else:
             cat = "BELOW THE RADAR · " + e["category"].upper().replace("BELOW THE RADAR · ", "")
         lat, lon = geocode(e.get("place"))
+        spoken = e["narration"].strip()
+        if e.get("next"):
+            spoken += " " + e["next"].strip()
+        if seg == "top" and ra < len(top_) and s["id"] == top_[ra][0]["id"] and rad_:
+            spoken = "Back to today's most-covered stories. " + spoken
+        card = e.get("card")
+        if framing.get("story") == s["id"] and framing.get("items"):
+            # "how outlets framed it": the outlets' own headlines replace the usual card while the narration covers it
+            card = {"kind": "framing", "items": framing["items"][:4], "text": "How did outlets frame it " +
+                    " ".join(x["outlet"] for x in framing["items"][:4])}
         stories.append({
             "id": s["id"], "segment": seg, "category": cat, "label": e["category"].replace("BELOW THE RADAR · ", ""), "headline": e["headline"], "facts": e["facts"][:3],
-            "narration": e["narration"],
+            "narration": spoken, "next": e.get("next"),
             "place": e.get("place") if lat is not None else None, "country": e.get("country"), "countries": e.get("countries"), "lat": lat, "lon": lon,
             "sources": n, "outlets": s["outlets"], "outlet_line": feature_line(s["outlets"], n),
-            "why": why or e.get("why") or "", "card": e.get("card"), "photo": e.get("photo"),
+            "why": why or e.get("why") or "", "card": card, "photo": e.get("photo"),
         })
         all_outlets += [o for o in s["outlets"] if o not in all_outlets]
     day = dt.datetime.strptime(date, "%Y-%m-%d")
@@ -123,14 +146,20 @@ def build(d, date, strapline=None):
     spoken = f"{day:%A} the {num2words(day.day, to='ordinal')} of {day:%B}"
     n_all = len(all_outlets)
     n_top = sum(1 for x in stories if x["segment"] == "top")
+    bumper = ed.get("radar_bumper") or ("Now, three stories from below the radar. They got much less "
+                                        "coverage, but each could make a real difference to people's lives.")
+    outro = ed.get("outro") or f"That's Isobar News, drawn from {words(n_all)} outlets. Same time tomorrow."
+    cold = (ed.get("cold_open") or "").strip() or None
+    body = [x["narration"] for x in stories] + [bumper, outro] + ([cold] if cold else [])
+    intro0 = intro_text(spoken, n_top, len(stories) - n_top, n_all, None, ed.get("teaser"))
+    # promise only what the video keeps: round the estimate up, with a margin
+    minutes = math.ceil(est_minutes(body + [intro0, "Isobar News. Today's news in under ten minutes."]) + 0.25)
     script = {
-        "show": "Isobar.News", "title_lead": ed.get("title_lead"), "date": nice, "strapline": strapline, "source": c["source"],
-        "intro": {"narration": ed.get("intro") or intro_text(spoken, n_top, len(stories) - n_top, n_all, ed.get("teaser"))},
-        "radar_bumper": ed.get("radar_bumper") or ("Now, three stories from below the radar. They got much less "
-                                                   "coverage, but each could make a real difference to people's lives."),
-        "outro": {"narration": ed.get("outro") or (
-            f"That's Isobar News for today. We drew on reporting from {words(n_all)} outlets around the world. "
-            "Thanks for watching, and see you tomorrow.")},
+        "show": "Isobar.News", "title_lead": ed.get("title_lead"), "title_tags": ed.get("title_tags"),
+        "cold_open": cold, "promise_min": minutes, "date": nice, "strapline": strapline, "source": c["source"],
+        "intro": {"narration": ed.get("intro") or intro_text(spoken, n_top, len(stories) - n_top, n_all, minutes, ed.get("teaser"))},
+        "radar_bumper": bumper,
+        "outro": {"narration": outro},
         "stories": stories,
         "all_outlets": sorted(all_outlets, key=lambda x: re.sub(r"^(The|Le|La|El|Der) ", "", x).lower()),
         "credit": ("Story clustering and summaries adapted from Kagi News · CC BY-NC 4.0" if c["source"] == "kagi"

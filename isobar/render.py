@@ -24,7 +24,7 @@ S = json.load(open(ED / "script.json")); ST = S["stories"]; N = len(ST)
 DUR = json.load(open(AUD / "durations.json"))
 TIM = json.load(open(AUD / "timings.json")) if (AUD / "timings.json").exists() else {}
 PHOTOS = json.load(open(ED / "photos.json")) if (ED / "photos.json").exists() else {}
-TEXT = {"01_intro": S["intro"]["narration"], "08a_radar": S.get("radar_bumper", ""), "99_outro": S["outro"]["narration"],
+TEXT = {"00_cold": S.get("cold_open") or "", "01_intro": S["intro"]["narration"], "08a_radar": S.get("radar_bumper", ""), "99_outro": S["outro"]["narration"],
         **{f"{i+2:02d}_story": s["narration"] for i, s in enumerate(S["stories"])}}
 
 def marks(name):
@@ -44,6 +44,7 @@ def when_said(name, text):
     return LEAD + mk[j][0] if ft & toks(mk[j][2]) else None
 MAXSRC = max(s["sources"] or 0 for s in ST)
 NTOP = sum(1 for s in ST if s["segment"] == "top")
+RADAR_IDX = [i for i, s in enumerate(ST) if s["segment"] == "radar"]   # playback positions of Below the Radar
 PAPER, INK, SOFT, LINE, ACC = (247, 244, 238), (22, 24, 29), (112, 112, 118), (214, 208, 198), (176, 52, 40)
 FD = str(ASSETS / "fonts") + "/"
 def serif(w, s, it=False): return ImageFont.truetype(FD + f"eb-garamond-latin-{w}-{'italic' if it else 'normal'}.ttf", s)
@@ -228,23 +229,83 @@ def sc_sting():
         frames.append(np.array(im))
     return frames, (lambda t: min(len(frames) - 1, int(t * FPS))), None, dur, False
 
+def lead_visual(w, h):
+    """The lead story's picture at w x h for the cold open and thumbnail. Geography first (map, then shaded countries):
+    a full-screen photo of a person reads as if they were the story's subject, which is often wrong (an official quoted,
+    not a victim). The photo is used only when the story has no place. Returns (image, credit-band or None)."""
+    st = ST[0]
+    if st.get("lat") is not None:
+        im, (px, py) = flat_map(st["lat"], st["lon"], w, h, span=14); d = ImageDraw.Draw(im)
+        d.ellipse([px - 22, py - 22, px + 22, py + 22], fill=PAPER); d.ellipse([px - 16, py - 16, px + 16, py + 16], fill=ACC)
+        return im, None
+    names = st.get("countries") or ([st["country"]] if st.get("country") else [])
+    if names:
+        big, _ = country_map(names, w, h, zoom_out=2.2)
+        if big is not None: return big, None
+    pid = st.get("photo"); ph = PHOTOS.get(pid) if pid else None
+    pf = ED / "photos" / f"use_{photo_safe(pid)}.jpg" if pid else None
+    if ph and pf and pf.exists():
+        try:
+            return cover(Image.open(pf).convert("RGB"), w, h), photo_credit(ph, w, h)
+        except Exception as ex:
+            print("lead visual: photo skipped", repr(ex), flush=True)
+    return None, None
+
+def sc_cold():
+    """Cold open: the lead story's picture full screen and its strongest facts, before any branding."""
+    name = "00_cold"; dur = DUR[name] + LEAD + TAIL
+    img, credit = lead_visual(W, H)
+    photo = credit is not None                    # photos get a dark fade and light text; maps stay light
+    if img is None:
+        base = paper()
+    elif not photo:
+        base = img.convert("RGB")
+        band = np.linspace(0, 1, H)[:, None] ** 2.2 * 0.92        # fade the map to paper towards the bottom
+        arr = np.array(base).astype(np.float32) * (1 - band[..., None]) + np.array(PAPER, dtype=np.float32) * band[..., None]
+        base = Image.fromarray(arr.astype(np.uint8))
+    else:
+        base = img.convert("RGB")
+        shade = np.linspace(0, 1, H)[:, None] ** 1.6 * 0.82      # darken towards the bottom for legible text
+        arr = np.array(base).astype(np.float32) * (1 - shade[..., None]) + np.array(INK, dtype=np.float32) * shade[..., None]
+        base = Image.fromarray(arr.astype(np.uint8))
+        if credit is not None:
+            base.paste(credit, (0, 0), credit)
+    fg = PAPER if photo else INK
+    mk = marks(name) or [[0, DUR[name], TEXT[name]]]
+    F = serif(600, 68); states = []
+    d0 = ImageDraw.Draw(base)
+    d0.text((110, 150), "TOP STORY  \u00b7  " + ST[0]["label"].upper(), font=sans("Bold", 24), fill=(255, 214, 205) if photo else ACC, anchor="ls")
+    for k in range(len(mk) + 1):
+        im = base.copy(); d = ImageDraw.Draw(im)
+        lines = [ln for _, _, s in mk[:k] for ln in wrap(d, s, F, W - 220)]
+        y = H - 120 - len(lines) * 80
+        for ln in lines:
+            d.text((110, y), ln, font=F, fill=fg); y += 80
+        states.append(np.array(im))
+    starts = [LEAD + m[0] for m in mk]
+    return states, (lambda t: sum(1 for s0 in starts if t >= s0 - 0.05)), None, dur, False
+
 def sc_intro():
     base = paper(); masthead(base); ticker_band(base); d = ImageDraw.Draw(base)
     d.text((90, 190), "Today's stories", font=serif(600, 72), fill=INK, anchor="ls")
-    d.text((90, 236), f"{['Zero','One','Two','Three','Four','Five','Six','Seven','Eight'][NTOP]} most covered, ranked by number of outlets. Then {['zero','one','two','three','four','five'][N - NTOP]} below the radar, picked for impact.", font=sans("Regular", 25), fill=SOFT, anchor="ls")
+    d.text((90, 236), f"{['Zero','One','Two','Three','Four','Five','Six','Seven','Eight'][NTOP]} most covered, ranked by number of outlets, and {['zero','one','two','three','four','five'][N - NTOP]} below the radar, picked for impact.", font=sans("Regular", 25), fill=SOFT, anchor="ls")
     d.text((W - 90, 290), "OUTLETS", font=sans("SemiBold", 15), fill=SOFT, anchor="rs")
-    rows = []; y = 300
+    rows = []; y = 290
     for i, st in enumerate(ST):
-        if i == NTOP:
-            y += 36; rows.append(("div", y)); y += 30
+        if RADAR_IDX and i == RADAR_IDX[0]:
+            y += 30; rows.append(("div", y)); y += 24
+        if RADAR_IDX and i == RADAR_IDX[-1] + 1:
+            y += 30; rows.append(("div2", y)); y += 24
         y += 52; rows.append((i, y))
     states = []
     for k in range(len(rows) + 1):
         im = base.copy(); dd = ImageDraw.Draw(im)
         for i, y in rows[:k]:
-            if i == "div":
-                dd.text((90, y + 8), "BELOW THE RADAR", font=sans("Bold", 17), fill=ACC, anchor="ls")
-                dd.line([290, y + 2, W - 90, y + 2], fill=ACC, width=1); continue
+            if i in ("div", "div2"):
+                lab = "BELOW THE RADAR" if i == "div" else "MORE OF THE MOST COVERED"
+                dd.text((90, y + 8), lab, font=sans("Bold", 17), fill=ACC if i == "div" else SOFT, anchor="ls")
+                x0 = 90 + dd.textlength(lab, font=sans("Bold", 17)) + 20
+                dd.line([x0, y + 2, W - 90, y + 2], fill=ACC if i == "div" else LINE, width=1); continue
             st = ST[i]
             dd.line([90, y - 40, W - 90, y - 40], fill=LINE, width=1)
             dd.text((90, y), f"{i+1:02d}", font=serif(500, 31, True), fill=ACC, anchor="ls")
@@ -268,7 +329,7 @@ def sc_radar():
         im = base.copy(); dd = ImageDraw.Draw(im)
         for j, st in enumerate(rad[:k]):
             y = 500 + j * 130
-            dd.text((240, y), f"{NTOP+1+j:02d}", font=serif(500, 40, True), fill=ACC, anchor="ls")
+            dd.text((240, y), f"{RADAR_IDX[j]+1:02d}", font=serif(500, 40, True), fill=ACC, anchor="ls")
             dd.text((320, y), st["headline"], font=serif(600, 44), fill=INK, anchor="ls")
             dd.text((320, y + 42), st["why"], font=sans("Regular", 24), fill=SOFT, anchor="ls")
         states.append(np.array(im))
@@ -291,9 +352,15 @@ def sc_story(i):
         d.text((LX, y), ln, font=serif(600, 70), fill=INK); y += 78
     y += 64                                   # breathing room between headline and facts
     bl = []
-    BF, BLH = sans("Regular", 38), 52           # bullet font and line height
+    BF, BLH = (sans("Regular", 34), 46) if st.get("next") else (sans("Regular", 38), 52)   # bullet font and line height
+    if st.get("next"): y -= 14
     for f in st["facts"]:
-        lines = wrap(d, f, BF, MW - 44); bl.append((y, lines)); y += len(lines) * BLH + 34
+        lines = wrap(d, f, BF, MW - 44); bl.append((y, lines)); y += len(lines) * BLH + (26 if st.get("next") else 34)
+    nxt, NF = None, sans("Medium", 30)
+    if st.get("next"):
+        nl = wrap(d, st["next"], NF, MW)
+        if y + 8 + 34 + len(nl) * 40 <= TY - 24:          # only if it fits above the ticker; the voice says it anyway
+            nxt = (y + 8, nl)
     MX, MY, MWd, MH = W - 90 - 620, 150, 620, 460
     name = f"{i+2:02d}_story"; dur = DUR[name] + LEAD + TAIL
     PMASK = Image.new("L", (MWd, MH), 0); ImageDraw.Draw(PMASK).rounded_rectangle([0, 0, MWd - 1, MH - 1], 6, fill=255)
@@ -335,11 +402,16 @@ def sc_story(i):
         for q, ln in enumerate(wrap(d, st["why"], sans("Regular", 22), MWd)):
             d.text((MX, ty + 190 + q * 30), ln, font=sans("Regular", 22), fill=INK, anchor="lm")
     states = []
-    for k in range(len(bl) + 1):
+    for k in range(len(bl) + 1 + (1 if nxt else 0)):
         im = base.copy(); dd = ImageDraw.Draw(im)
         for by_, lines in bl[:k]:
             dd.line([LX, by_ + 26, LX + 18, by_ + 26], fill=ACC, width=3)
             for q, ln in enumerate(lines): dd.text((LX + 44, by_ + q * BLH), ln, font=BF, fill=INK)
+        if nxt and k > len(bl):
+            ny, nl = nxt
+            dd.rectangle([LX, ny, LX + 6, ny + 28 + len(nl) * 40], fill=ACC)
+            dd.text((LX + 24, ny + 18), "WHAT NEXT", font=sans("Bold", 18), fill=ACC, anchor="ls")
+            for q, ln in enumerate(nl): dd.text((LX + 24, ny + 30 + q * 40), ln, font=NF, fill=INK)
         states.append(np.array(im))
     # each bullet appears when the narration reaches the sentence it summarises
     reveal, prev = [], -0.5
@@ -347,6 +419,9 @@ def sc_story(i):
         r = when_said(name, f)
         if r is None: r = 0.7 + dur * 0.6 * j / max(1, len(st["facts"]))
         r = min(max(r, prev + 1.2, 0.7), dur - 1.5); reveal.append(r); prev = r
+    if nxt:
+        r = when_said(name, st["next"]) or dur * 0.85
+        reveal.append(min(max(r, prev + 1.2), dur - 1.0))
     # panel sequence: map -> photo (when its subject is mentioned) -> card (when its figure or quote is spoken)
     card = st.get("card"); card_img = make_card(card, MWd, MH) if card else None; tc = None
     if card_img is not None and dur > 12:
@@ -416,6 +491,20 @@ def photo_credit(ph, w, h):
 def make_card(c, w, h):
     """Key figure ("big" + "label") or quote ("text" + "by") on the panel paper."""
     im = Image.new("RGB", (w, h), (239, 233, 222)); d = ImageDraw.Draw(im)
+    if c.get("kind") == "framing":
+        d.text((32, 46), "HOW OUTLETS HEADLINED IT", font=sans("Bold", 18), fill=ACC, anchor="ls")
+        items = c["items"]; fs = 27
+        while True:
+            hf = serif(500, fs, True); blocks = [wrap(d, "\u201c" + x["headline"] + "\u201d", hf, w - 64) for x in items]
+            need = sum(30 + len(b) * int(fs * 1.18) + 16 for b in blocks)
+            if need <= h - 80 or fs <= 19: break
+            fs -= 1
+        y = 82
+        for x, b in zip(items, blocks):
+            d.text((32, y + 16), x["outlet"].upper(), font=sans("SemiBold", 16), fill=SOFT, anchor="ls"); y += 30
+            for ln in b: d.text((32, y + fs), ln, font=hf, fill=INK, anchor="ls"); y += int(fs * 1.18)
+            y += 16
+        return im
     if c.get("kind") == "quote":
         d.text((44, 120), "\u201c", font=serif(600, 160), fill=ACC, anchor="ls")
         f = serif(500, 40, True); lines = wrap(d, c["text"], f, w - 100)
@@ -509,29 +598,36 @@ def write_captions(L, path):
     return len(cues)
 
 def make_thumbnail(path):
-    """1280x720: wordmark and date, the lead headline large, its map on the right."""
-    TW_, TH_ = 1280, 720; lead = ST[0]
+    """1280x720. Right: the lead story's photo or map, full height. Left: wordmark, date and three short story tags
+    (editorial 'title_tags', else the top headlines), then '+ N more'. Built to be picked out and read at phone size."""
+    TW_, TH_ = 1280, 720
     im = Image.fromarray(PAPER_ARR).resize((TW_, TH_), Image.LANCZOS); d = ImageDraw.Draw(im)
-    m = mark(62); im.paste(m, (56, 40), m); wordmark(im, (132, 92), 56)
+    VW = 560; vis, credit = lead_visual(VW, TH_)
+    left = TW_
+    if vis is not None:
+        im.paste(vis, (TW_ - VW, 0)); left = TW_ - VW
+        if credit is not None:
+            cb = credit.crop((0, TH_ - 34, VW, TH_)); im.paste(cb, (TW_ - VW, TH_ - 34), cb)
+        d.rectangle([TW_ - VW - 6, 0, TW_ - VW, TH_], fill=ACC)
+    m = mark(54); im.paste(m, (48, 36), m); wordmark(im, (114, 82), 48)
     import datetime as _dt
     day = _dt.datetime.strptime(ED.name, "%Y-%m-%d")
-    d.text((TW_ - 56, 88), f"{day.day} {day:%b %Y}", font=sans("SemiBold", 30), fill=SOFT, anchor="rs")
-    d.line([56, 124, TW_ - 56, 124], fill=INK, width=3)
-    tw = TW_ - 112
-    if lead["lat"] is not None:
-        MS = 430; mimg, (px, py) = flat_map(lead["lat"], lead["lon"], MS, MS, span=12)
-        msk = Image.new("L", (MS, MS), 0); ImageDraw.Draw(msk).rounded_rectangle([0, 0, MS - 1, MS - 1], 10, fill=255)
-        mx, my = TW_ - 56 - MS, 170; im.paste(mimg, (mx, my), msk)
-        d.ellipse([mx + px - 16, my + py - 16, mx + px + 16, my + py + 16], fill=PAPER)
-        d.ellipse([mx + px - 12, my + py - 12, mx + px + 12, my + py + 12], fill=ACC)
-        tw = mx - 56 - 40
-    fs = 96
-    while fs > 48 and len(wrap(d, lead["headline"], serif(600, fs), tw)) > 4: fs -= 4
-    y = 170
-    for ln in wrap(d, lead["headline"], serif(600, fs), tw):
-        d.text((56, y), ln, font=serif(600, fs), fill=INK); y += int(fs * 1.08)
-    d.rectangle([56, 618, 120, 624], fill=ACC)
-    d.text((56, 668), f"TOP STORY  ·  + {len(ST) - 1} MORE STORIES", font=sans("Bold", 28), fill=ACC, anchor="ls")
+    d.text((50, 140), f"{day.day} {day:%B %Y}".upper(), font=sans("Bold", 24), fill=SOFT, anchor="ls")
+    tags = (S.get("title_tags") or [s_["headline"] for s_ in ST[:3]])[:3]
+    tw = left - 48 - 40; fs = 80; avail = TH_ - 110 - 200
+    def height(f): return sum(len(wrap(d, t, serif(600, f), tw - 56)) * int(f * 1.02) + int(f * 0.22) for t in tags)
+    while fs > 56 and any(len(wrap(d, t, serif(600, fs), tw - 56)) > 1 for t in tags): fs -= 2   # one line each if possible
+    while fs > 36 and height(fs) > avail: fs -= 2
+    y = 200
+    for n_, t in enumerate(tags, 1):
+        d.text((50, y + int(fs * 0.82)), f"{n_}", font=serif(500, int(fs * 0.7), True), fill=ACC, anchor="ls")
+        for ln in wrap(d, t, serif(600, fs), tw - 56):
+            d.text((106, y), ln, font=serif(600, fs), fill=INK); y += int(fs * 1.02)
+        y += int(fs * 0.22)
+    more = len(ST) - len(tags)
+    if more > 0:
+        d.rectangle([50, TH_ - 92, 50 + d.textlength(f"+ {more} MORE STORIES", font=sans("Bold", 30)) + 36, TH_ - 40], fill=ACC)
+        d.text((68, TH_ - 54), f"+ {more} MORE STORIES", font=sans("Bold", 30), fill=PAPER, anchor="ls")
     im.save(path)
 
 # ---------- compositing ----------
@@ -558,9 +654,10 @@ def frame(states, sf, pin, t, gt, dur, has_ticker):
     return arr
 
 def scenes():
-    out = [("00_sting", sc_sting), ("01_intro", sc_intro)]
+    out = [("00_cold", sc_cold)] if S.get("cold_open") else []
+    out += [("00_sting", sc_sting), ("01_intro", sc_intro)]
     for i in range(N):
-        if i == NTOP: out.append(("08a_radar", sc_radar))
+        if RADAR_IDX and i == RADAR_IDX[0]: out.append(("08a_radar", sc_radar))
         out.append((f"{i+2:02d}_story", (lambda i=i: sc_story(i))))
     return out + [("99_outro", sc_outro)]
 
@@ -578,6 +675,7 @@ if __name__ == "__main__":
     sc = scenes()
     if ARGS.stills is not None:
         (ED / "stills").mkdir(exist_ok=True)
+        if "thumbnail" in ARGS.stills: make_thumbnail(ED / "stills" / "thumbnail.png")
         for name, b in sc:
             if not ARGS.stills or name in ARGS.stills:
                 states, sf, pin, dur, tk = b(); t = min(dur - 1.0, 2.0) if name == "00_sting" else dur - 1.0
@@ -609,5 +707,5 @@ if __name__ == "__main__":
     json.dump(L, open(ED / f"scene_lengths_{ARGS.audio}.json", "w"), indent=1)
     print("captions:", write_captions(L, out.with_suffix(".srt")), "cues")
     make_thumbnail(ED / "thumbnail.png")
-    (ED / "title.txt").write_text(yt_title(S.get("title_lead") or ST[0]["headline"], ED.name, len(ST) - 1) + "\n")
+    (ED / "title.txt").write_text(yt_title(S.get("title_lead") or ST[0]["headline"], ED.name, len(ST) - 1, S.get("title_tags")) + "\n")
     print("wrote", out)

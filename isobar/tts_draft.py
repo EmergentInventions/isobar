@@ -5,10 +5,13 @@ from pathlib import Path
 
 
 def scenes(script):
-    out = [("00_sting", "Isobar News."), ("01_intro", script["intro"]["narration"])]
-    ntop = sum(1 for s in script["stories"] if s["segment"] == "top")
+    """Playback order. A cold open (if any) comes first; the Below the Radar bumper goes before the first radar story,
+    wherever the script placed that block."""
+    out = [("00_cold", script["cold_open"])] if script.get("cold_open") else []
+    out += [("00_sting", "Isobar News."), ("01_intro", script["intro"]["narration"])]
+    first_radar = next((i for i, s in enumerate(script["stories"]) if s["segment"] == "radar"), None)
     for i, st in enumerate(script["stories"]):
-        if i == ntop:
+        if i == first_radar:
             out.append(("08a_radar", script["radar_bumper"]))
         out.append((f"{i+2:02d}_story", st["narration"]))
     return out + [("99_outro", script["outro"]["narration"])]

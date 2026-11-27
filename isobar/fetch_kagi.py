@@ -45,7 +45,38 @@ def story_record(s, category):
         "outlets": names,
         "outlet_count": len(names),
         "kagi_unique_domains": s.get("unique_domains"),
+        "context": context(s),
     }
+
+
+CONTEXT_LISTS = ["perspectives", "timeline", "historical_background", "other_angles", "humanitarian_impact",
+                 "international_reactions", "technical_details", "scientific_significance", "industry_impact",
+                 "business_angle_points", "user_action_items", "did_you_know"]
+
+
+def context(s):
+    """The rest of Kagi's record, for the editorial step: 'what next' lines, framing and quotes come only from here.
+    Every item keeps its [domain#n] source tags so claims stay attributable."""
+    out = {}
+    for k in CONTEXT_LISTS:
+        v = s.get(k)
+        if not v: continue
+        if isinstance(v, list):
+            v = [x.get("text") or (f"{x.get('date', '')}: {x.get('content', '')}" if "content" in x else str(x))
+                 if isinstance(x, dict) else x for x in v]
+        out[k] = v
+    if s.get("suggested_qna"):
+        out["qna"] = [{"q": x.get("question"), "a": x.get("answer")} for x in s["suggested_qna"]]
+    if s.get("quote"):
+        out["quote"] = {"text": s["quote"], "author": s.get("quote_author"), "via": s.get("quote_attribution")}
+    # one headline per outlet: how each framed the story (used for the "how outlets framed it" segment)
+    seen, heads = set(), []
+    for a in s.get("articles") or []:
+        dmn = a.get("domain", "")
+        if dmn and dmn not in seen and a.get("title"):
+            seen.add(dmn); heads.append({"domain": dmn, "title": a["title"].strip()})
+    out["headlines"] = heads[:40]
+    return out
 
 
 def fetch(date: str):

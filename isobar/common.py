@@ -94,11 +94,13 @@ def sentences(text: str):
     return out + ([tail] if tail else [])
 
 
-def yt_title(headline: str, date: str, more: int = 0) -> str:
+def yt_title(headline: str, date: str, more: int = 0, tags=None) -> str:
     """'Lead headline + 9 more | Isobar News, 27 Nov', at most 100 characters (YouTube's limit).
 
     The title promises the whole bulletin, not just the lead story, so viewers get what they clicked for."""
     d = dt.datetime.strptime(date, "%Y-%m-%d")
+    if tags:                                   # 'Kuwait drone strike, EU budget talks fail, Trump urges Putin + 7 more'
+        headline, more = ", ".join(tags), max(0, more + 1 - len(tags))
     tail = (f" + {more} more" if more else "") + f" | Isobar News, {d.day} {d:%b}"
     h = headline if len(headline) + len(tail) <= 100 else headline[:100 - len(tail) - 1].rsplit(" ", 1)[0] + "…"
     return h + tail

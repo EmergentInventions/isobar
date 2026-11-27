@@ -16,10 +16,10 @@ def main():
     t, at = 0.0, {}
     for k, v in L.items():
         at[k] = t; t += v
-    ntop = sum(1 for x in s["stories"] if x["segment"] == "top")
-    out = [yt_title(s.get("title_lead") or s["stories"][0]["headline"], ed.name, len(s["stories"]) - 1), "", "Chapters", "0:00 Today's stories"]
+    first_radar = next((i for i, x in enumerate(s["stories"]) if x["segment"] == "radar"), None)
+    out = [yt_title(s.get("title_lead") or s["stories"][0]["headline"], ed.name, len(s["stories"]) - 1, s.get("title_tags")), "", "Chapters", "0:00 Today's stories"]
     for i, st in enumerate(s["stories"]):
-        if i == ntop and "08a_radar" in at:
+        if i == first_radar and "08a_radar" in at:
             out.append(f"{mmss(at['08a_radar'])} Below the Radar")
         out.append(f"{mmss(at[f'{i+2:02d}_story'])} {st['headline']} ({st['sources']} outlets)")
     out += [f"{mmss(at['99_outro'])} Credits", "", "Website: https://isobar.news",
