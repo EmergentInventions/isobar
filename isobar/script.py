@@ -152,8 +152,8 @@ def build(d, date, strapline=None):
     cold = (ed.get("cold_open") or "").strip() or None
     body = [x["narration"] for x in stories] + [bumper, outro] + ([cold] if cold else [])
     intro0 = intro_text(spoken, n_top, len(stories) - n_top, n_all, None, ed.get("teaser"))
-    # promise only what the video keeps: round the estimate up, with a margin
-    minutes = math.ceil(est_minutes(body + [intro0, "Isobar News. Today's news in under ten minutes."]) + 0.25)
+    # promise only what the video keeps: round the estimate up (it runs ~0.3 min long; checks.md verifies the real runtime)
+    minutes = math.ceil(est_minutes(body + [intro0, "Isobar News. Today's news in under ten minutes."]))
     script = {
         "show": "Isobar.News", "title_lead": ed.get("title_lead"), "title_tags": ed.get("title_tags"),
         "cold_open": cold, "promise_min": minutes, "date": nice, "strapline": strapline, "source": c["source"],
