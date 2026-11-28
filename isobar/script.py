@@ -113,6 +113,7 @@ def build(d, date, strapline=None):
     ra = max(0, min(int(ra), len(top_)))
     chosen = top_[:ra] + rad_ + top_[ra:]
     framing = ed.get("framing") or {}
+    doc = ed.get("doc") or {}                   # documentary slot: timeline and clippings wall after one story
     stories, all_outlets = [], []
     for k, (s, seg, why) in enumerate(chosen):
         e = {**auto_story(s, s["category"].upper()), **ed.get("stories", {}).get(s["id"], {})}
@@ -138,7 +139,7 @@ def build(d, date, strapline=None):
             "narration": spoken, "next": e.get("next"),
             "place": e.get("place") if lat is not None else None, "country": e.get("country"), "countries": e.get("countries"), "lat": lat, "lon": lon,
             "sources": n, "outlets": s["outlets"], "outlet_line": feature_line(s["outlets"], n),
-            "why": why or e.get("why") or "", "card": card, "photo": e.get("photo"),
+            "why": why or e.get("why") or "", "card": card, "photo": e.get("photo"), "chart": e.get("chart"),
         })
         all_outlets += [o for o in s["outlets"] if o not in all_outlets]
     day = dt.datetime.strptime(date, "%Y-%m-%d")
@@ -150,13 +151,18 @@ def build(d, date, strapline=None):
                                         "coverage, but each could make a real difference to people's lives.")
     outro = ed.get("outro") or f"That's Isobar News, drawn from {words(n_all)} outlets. Same time tomorrow."
     cold = (ed.get("cold_open") or "").strip() or None
+    docs = None
+    if doc.get("story") in {x["id"] for x in stories} and (doc.get("timeline") or doc.get("clippings")):
+        docs = {"story": doc["story"], "timeline": doc.get("timeline"), "clippings": doc.get("clippings")}
     body = [x["narration"] for x in stories] + [bumper, outro] + ([cold] if cold else [])
+    if docs:
+        body += [d["narration"] for d in (docs["timeline"], docs["clippings"]) if d]
     intro0 = intro_text(spoken, n_top, len(stories) - n_top, n_all, None, ed.get("teaser"))
     # promise only what the video keeps: round the estimate up (it runs ~0.3 min long; checks.md verifies the real runtime)
     minutes = math.ceil(est_minutes(body + [intro0, "Isobar News. Today's news in under ten minutes."]))
     script = {
         "show": "Isobar.News", "title_lead": ed.get("title_lead"), "title_tags": ed.get("title_tags"),
-        "cold_open": cold, "promise_min": minutes, "date": nice, "strapline": strapline, "source": c["source"],
+        "cold_open": cold, "promise_min": minutes, "doc": docs, "date": nice, "strapline": strapline, "source": c["source"],
         "intro": {"narration": ed.get("intro") or intro_text(spoken, n_top, len(stories) - n_top, n_all, minutes, ed.get("teaser"))},
         "radar_bumper": bumper,
         "outro": {"narration": outro},

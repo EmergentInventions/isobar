@@ -26,6 +26,12 @@ TIM = json.load(open(AUD / "timings.json")) if (AUD / "timings.json").exists() e
 PHOTOS = json.load(open(ED / "photos.json")) if (ED / "photos.json").exists() else {}
 TEXT = {"00_cold": S.get("cold_open") or "", "01_intro": S["intro"]["narration"], "08a_radar": S.get("radar_bumper", ""), "99_outro": S["outro"]["narration"],
         **{f"{i+2:02d}_story": s["narration"] for i, s in enumerate(S["stories"])}}
+DOC = S.get("doc") or {}
+DOC_I = next((i for i, s in enumerate(ST) if s["id"] == DOC.get("story")), None)
+if DOC_I is not None:
+    if DOC.get("timeline"): TEXT[f"{DOC_I+2:02d}t_timeline"] = DOC["timeline"]["narration"]
+    if DOC.get("clippings"): TEXT[f"{DOC_I+2:02d}c_clips"] = DOC["clippings"]["narration"]
+SFX = {}   # scene -> [(seconds into scene, kind)]; written to sfx_events.json for the music/sound mix
 
 def marks(name):
     """[[start, end, sentence], ...] within the scene's audio: measured by the voice step, else estimated by length."""
@@ -285,6 +291,135 @@ def sc_cold():
     starts = [LEAD + m[0] for m in mk]
     return states, (lambda t: sum(1 for s0 in starts if t >= s0 - 0.05)), None, dur, False
 
+DESK = (228, 221, 208)
+def push(arr, t, dur, amt=0.035):
+    """Slow documentary push-in over the whole scene."""
+    z = 1 + amt * min(1, t / max(1, dur)); cw, ch = W / z, H / z; x0, y0 = (W - cw) / 2, (H - ch) / 2
+    return np.array(Image.fromarray(arr).resize((W, H), Image.BILINEAR, box=(x0, y0, x0 + cw, y0 + ch)))
+
+def sc_timeline():
+    """'How we got here': a date ruler that draws itself, one event per spoken sentence."""
+    i = DOC_I; name = f"{i+2:02d}t_timeline"; dur = DUR[name] + LEAD + TAIL; items = DOC["timeline"]["items"][:6]
+    base = paper(); masthead(base); d = ImageDraw.Draw(base)
+    d.text((90, 200), "HOW WE GOT HERE", font=sans("Bold", 24), fill=ACC, anchor="ls")
+    for q, ln in enumerate(wrap(d, ST[i]["headline"], serif(600, 56), W - 180)[:2]):
+        d.text((90, 270 + q * 64), ln, font=serif(600, 56), fill=INK, anchor="ls")
+    n = len(items); X0, X1, LY = 290, W - 290, 600          # inset: the slow push-in crops about 3% each side
+    xs = [X0 + (X1 - X0) * k / max(1, n - 1) for k in range(n)]; colw = (X1 - X0) / max(1, n - 1) - 40
+    mk = marks(name)
+    appear = []
+    for k, it in enumerate(items):
+        r = when_said(name, it["text"]); r = r if r is not None else (LEAD + mk[min(k + 1, len(mk) - 1)][0] if mk else 1 + k * 3)
+        appear.append(max(r, appear[-1] + 0.8 if appear else 0.6))
+    SFX.setdefault(name, []).extend((a, "tick") for a in appear)
+    def at(t):
+        im = base.copy(); dd = ImageDraw.Draw(im)
+        shown = [k for k in range(n) if t >= appear[k]]
+        if shown:
+            k = shown[-1]; g = min(1, (t - appear[k]) / 0.6); prev = xs[k - 1] if k else X0 - 60
+            xe = prev + (xs[k] - prev) * (1 - (1 - g) ** 3)
+            dd.line([X0 - 60, LY, xe, LY], fill=INK, width=3)
+        for k in shown:
+            a = min(1, (t - appear[k]) / 0.5); x = xs[k]
+            rr = int(6 + 6 * a); dd.ellipse([x - rr, LY - rr, x + rr, LY + rr], fill=ACC if k == n - 1 else INK)
+            col = tuple(int(PAPER[j] + (INK[j] - PAPER[j]) * a) for j in range(3))
+            dd.text((x, LY - 40), items[k]["date"], font=serif(600, 40), fill=tuple(int(PAPER[j] + ((ACC if k == n - 1 else INK)[j] - PAPER[j]) * a) for j in range(3)), anchor="ms")
+            for q, ln in enumerate(wrap(dd, items[k]["text"], sans("Regular", 26), colw)[:4]):
+                dd.text((x, LY + 60 + q * 36), ln, font=sans("Regular", 26), fill=col, anchor="ms")
+        return push(np.array(im), t, dur)
+    return at, None, None, dur, False
+
+def _clip_card(outlet, headline, mark, w):
+    """A newspaper clipping: outlet line, rule, headline in serif. Returns (plain RGBA, marked RGBA, mark mask)."""
+    f = serif(600, 40); pad = 30; dummy = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    words = headline.split(); lines, cur = [], []
+    for wd in words:
+        if cur and dummy.textlength(" ".join(cur + [wd]), font=f) > w - 2 * pad: lines.append(cur); cur = []
+        cur.append(wd)
+    lines.append(cur)
+    h = pad + 40 + 18 + len(lines) * 50 + pad
+    plain = Image.new("RGBA", (w, h), (250, 247, 240, 255)); d = ImageDraw.Draw(plain)
+    d.text((pad, pad + 22), outlet.upper(), font=sans("Bold", 17), fill=SOFT, anchor="ls")
+    d.line([pad, pad + 38, w - pad, pad + 38], fill=LINE, width=2)
+    mw = [x.lower().strip(".,;:'\"") for x in (mark or "").split()]; flat = [(li, wi, wd) for li, ln in enumerate(lines) for wi, wd in enumerate(ln)]
+    hit = set()
+    for s0 in range(len(flat)):
+        if mw and [x[2].lower().strip(".,;:'\"") for x in flat[s0:s0 + len(mw)]] == mw:
+            hit = {(x[0], x[1]) for x in flat[s0:s0 + len(mw)]}; break
+    mask = Image.new("L", (w, h), 0); md = ImageDraw.Draw(mask)
+    y = pad + 58
+    for li, ln in enumerate(lines):
+        x = pad
+        for wi, wd in enumerate(ln):
+            tw = d.textlength(wd, font=f)
+            if (li, wi) in hit:
+                nxt = d.textlength(" ", font=f) if (li, wi + 1) in hit else 0
+                md.rectangle([x - 4, y + 4, x + tw + nxt + 4, y + 46], fill=255)
+            x += tw + d.textlength(" ", font=f)
+        y += 50
+    marked = plain.copy(); hl = Image.new("RGBA", (w, h), (247, 214, 120, 255)); marked.paste(hl, (0, 0), mask)
+    for img in (plain, marked):
+        dd = ImageDraw.Draw(img); y = pad + 58
+        for ln in lines: dd.text((pad, y), " ".join(ln), font=f, fill=INK); y += 50
+    return plain, marked, mask
+
+def sc_clips():
+    """'How it was reported': headlines land as clippings on a desk, and the differing words get highlighted."""
+    i = DOC_I; name = f"{i+2:02d}c_clips"; dur = DUR[name] + LEAD + TAIL; C = DOC["clippings"]; items = C["items"][:6]
+    base = Image.new("RGB", (W, H), DESK); d = ImageDraw.Draw(base)
+    vig = np.linspace(-1, 1, W)[None, :] ** 2 + np.linspace(-1, 1, H)[:, None] ** 2
+    arr = np.array(base).astype(np.float32) * (1 - 0.10 * np.clip(vig, 0, 1.6)[..., None]); base = Image.fromarray(arr.astype(np.uint8)); d = ImageDraw.Draw(base)
+    d.text((90, 90), "HOW IT WAS REPORTED", font=sans("Bold", 24), fill=ACC, anchor="ls")
+    d.text((90, 124), "Headlines as published", font=sans("Regular", 22), fill=SOFT, anchor="ls")
+    cols, CW = 3, 540; gx = [90 + k * (CW + 45) for k in range(cols)]
+    rng = np.random.default_rng(7); cards = []
+    for k, it in enumerate(items):
+        plain, marked, mask = _clip_card(it["outlet"], it["headline"], it.get("mark"), CW)
+        ang = float(rng.uniform(-2.6, 2.6)); x = gx[k % cols] + int(rng.integers(-10, 10)); y = 175 + (k // cols) * 350 + int(rng.integers(-12, 12))
+        cards.append(dict(plain=plain, marked=marked, mask=mask, ang=ang, x=x, y=y, it=it))
+    appear = []
+    for k, c in enumerate(cards):
+        r = when_said(name, c["it"]["outlet"] + " " + (c["it"].get("mark") or ""))
+        appear.append(max(r if r is not None else 1 + k * 2.5, appear[-1] + 0.9 if appear else 0.8))
+    nxt = C.get("next"); tn = when_said(name, nxt) if nxt else None
+    SFX.setdefault(name, []).extend((a, "paper") for a in appear)
+    SFX[name].extend((a + 0.55, "marker") for a, c in zip(appear, cards) if c["it"].get("mark"))
+    def shadowed(img, ang):
+        r = img.rotate(ang, resample=Image.BICUBIC, expand=True)
+        sh = Image.new("RGBA", (r.width + 30, r.height + 30), (0, 0, 0, 0)); a = r.split()[3].point(lambda v: int(v * 0.28))
+        sh.paste(Image.new("RGBA", r.size, (40, 30, 20, 255)), (16, 20), a)
+        from PIL import ImageFilter
+        sh = sh.filter(ImageFilter.GaussianBlur(9)); sh.alpha_composite(r, (0, 0)); return sh
+    settled = [None] * len(cards)
+    def at(t):
+        im = base.copy().convert("RGBA")
+        for k, c in enumerate(cards):
+            if t < appear[k]: continue
+            g = min(1, (t - appear[k]) / 0.45); e = 1 - (1 - g) ** 3
+            hm = min(1, max(0, (t - appear[k] - 0.55) / 0.6)) if c["it"].get("mark") else 0
+            if g >= 1 and hm >= 1 and settled[k] is not None: img = settled[k]
+            else:
+                if hm <= 0: card = c["plain"]
+                elif hm >= 1: card = c["marked"]
+                else:
+                    sweep = Image.new("L", c["mask"].size, 0); ImageDraw.Draw(sweep).rectangle([0, 0, int(c["mask"].width * hm), c["mask"].height], fill=255)
+                    from PIL import ImageChops
+                    card = c["plain"].copy(); card.paste(c["marked"], (0, 0), ImageChops.multiply(c["mask"], sweep))
+                img = shadowed(card, c["ang"] + 6 * (1 - e))
+                if g >= 1 and (hm >= 1 or not c["it"].get("mark")): settled[k] = img
+            a = e
+            dy = int(-40 * (1 - e))
+            if a < 1: img = img.copy(); img.putalpha(img.split()[3].point(lambda v: int(v * a)))
+            im.alpha_composite(img, (c["x"], c["y"] + dy))
+        if tn is not None and t >= tn:
+            a = min(1, (t - tn) / 0.5); dd = ImageDraw.Draw(im)
+            dd.rectangle([0, H - 150, W, H], fill=INK + (int(235 * a),))
+            dd.text((90, H - 96), "WHAT NEXT", font=sans("Bold", 20), fill=(255, 214, 205, int(255 * a)), anchor="ls")
+            for q, ln in enumerate(wrap(dd, nxt, sans("Medium", 30), W - 380)[:2]):
+                dd.text((290, H - 96 + q * 40), ln, font=sans("Medium", 30), fill=PAPER + (int(255 * a),), anchor="ls")
+        return push(np.array(im.convert("RGB")), t, dur, 0.03)
+    return at, None, None, dur, False
+
 def sc_intro():
     base = paper(); masthead(base); ticker_band(base); d = ImageDraw.Draw(base)
     d.text((90, 190), "Today's stories", font=serif(600, 72), fill=INK, anchor="ls")
@@ -423,9 +558,11 @@ def sc_story(i):
         r = when_said(name, st["next"]) or dur * 0.85
         reveal.append(min(max(r, prev + 1.2), dur - 1.0))
     # panel sequence: map -> photo (when its subject is mentioned) -> card (when its figure or quote is spoken)
-    card = st.get("card"); card_img = make_card(card, MWd, MH) if card else None; tc = None
+    card = st.get("chart") or st.get("card"); card_img = make_card(card, MWd, MH) if card else None; tc = None
     if card_img is not None and dur > 12:
-        w_ = when_said(name, card.get("text") or (card.get("label", "") + " " + card.get("big", "")))
+        cue = card.get("text") or (" ".join(x["label"] for x in card["items"]) if card.get("kind") in ("bars", "seats")
+                                   else card.get("label", "") + " " + card.get("big", ""))
+        w_ = when_said(name, cue)
         tc = min(max(w_ or dur * 0.5, 5.0, dur * 0.35), dur - 5)
     pid = st.get("photo"); ph = PHOTOS.get(pid) if pid else None; pf = ED / "photos" / f"use_{photo_safe(pid)}.jpg" if pid else None
     photo_big, tp = None, None
@@ -439,6 +576,7 @@ def sc_story(i):
             credit_band = photo_credit(ph, MWd, MH)
         else:
             tp = None
+    if tc is not None: SFX.setdefault(name, []).append((tc, "rise" if card.get("kind") in ("bars", "seats") else "soft"))
     PIN = [None]
     def view(t):  # continent to region over 5 s (ease-out), then a slow drift closer
         e = min(1, t / 5.0); e = 1 - (1 - e) ** 3
@@ -456,7 +594,10 @@ def sc_story(i):
             x0 = min(max(bx - cw / 2, 0), MWd * ZM - cw); y0 = min(max(by - ch / 2, 0), MH * ZM - ch)
             panel = big.resize((MWd, MH), Image.BILINEAR, box=(x0, y0, x0 + cw, y0 + ch))
             pin_xy = (MX + int((bx - x0) * MWd / cw), MY + int((by - y0) * MH / ch)) if has_pin else None
-        for t0, layer in ((tp, photo_at if photo_big is not None else None), (tc, (lambda t: card_img) if card_img is not None else None)):
+        def card_at(t):
+            p = min(1.0, (t - tc) / 1.6)
+            return card_img if p >= 1 or card.get("kind") in ("quote", "framing") else make_card(card, MWd, MH, p)
+        for t0, layer in ((tp, photo_at if photo_big is not None else None), (tc, card_at if card_img is not None else None)):
             if t0 is None or layer is None or t <= t0: continue
             a = min(1.0, (t - t0) / 0.5)
             under = panel if panel is not None else Image.fromarray(arr[MY:MY + MH, MX:MX + MWd])
@@ -488,8 +629,61 @@ def photo_credit(ph, w, h):
     d.text((12, h - 17), txt, font=f, fill=(247, 244, 238, 235), anchor="lm")
     return band
 
-def make_card(c, w, h):
-    """Key figure ("big" + "label") or quote ("text" + "by") on the panel paper."""
+_NUM = re.compile(r"^(\D*?)(\d[\d,]*\.?\d*)(.*)$")
+def counted(big, p):
+    """'7,000+' at p=0.5 -> '3,500+': the figure counts up, keeping its prefix, suffix, decimals and separators."""
+    m = _NUM.match(big or "")
+    if not m or p >= 1: return big
+    pre, num, post = m.groups(); val = float(num.replace(",", "")); dec = len(num.split(".")[1]) if "." in num else 0
+    e = 1 - (1 - p) ** 3; x = val * e
+    s_ = f"{x:,.{dec}f}" if "," in num else f"{x:.{dec}f}"
+    return pre + s_ + post
+
+def chart_card(c, w, h, p=1.0):
+    """Animated data panel: 'bars' (horizontal bars) or 'seats' (parliament semicircle). p is the animation 0..1."""
+    im = Image.new("RGB", (w, h), (239, 233, 222)); d = ImageDraw.Draw(im); e = 1 - (1 - min(1, p)) ** 3
+    d.text((32, 46), c.get("title", "").upper(), font=sans("Bold", 18), fill=ACC, anchor="ls")
+    if c["kind"] == "bars":
+        items = c["items"]; mx = max(x["value"] for x in items) * 1.38; y = 110; bw = w - 64
+        for x in items:
+            d.text((32, y), x["label"], font=sans("SemiBold", 24), fill=INK, anchor="ls")
+            d.rectangle([32, y + 16, 32 + bw, y + 52], fill=(226, 219, 206))
+            d.rectangle([32, y + 16, 32 + int(bw * x["value"] / mx * e), y + 52], fill=ACC)
+            if e > 0.6: d.text((32 + int(bw * x["value"] / mx * e) + 12, y + 44), x.get("text", f'{x["value"]}{c.get("unit", "")}'),
+                               font=serif(600, 30), fill=INK, anchor="ls")
+            y += 104
+    else:  # seats: dots on concentric arcs, filled left to right in the order given
+        total = c["total"]; rows = 6; cx, cy = w // 2, h - 120; r0, r1 = 80, min(w // 2 - 30, h - 120 - 120)
+        radii = [r0 + (r1 - r0) * k / (rows - 1) for k in range(rows)]
+        per = [round(total * r / sum(radii)) for r in radii]; per[-1] += total - sum(per)
+        pts = []
+        for r, n in zip(radii, per):
+            for j in range(n):
+                a = math.pi * (1 - j / max(1, n - 1)); pts.append((a, cx + r * math.cos(a), cy - r * math.sin(a)))
+        pts.sort(key=lambda q: -q[0])
+        cols = [ACC, INK, (150, 146, 140), (190, 120, 100)]; owner = []
+        for k, x in enumerate(c["items"]): owner += [cols[k % len(cols)]] * x["value"]
+        shown = int(total * e); rad = 7
+        for k, (_, x_, y_) in enumerate(pts):
+            col = owner[k] if k < shown and k < len(owner) else (222, 214, 200)
+            d.ellipse([x_ - rad, y_ - rad, x_ + rad, y_ + rad], fill=col)
+        if c.get("majority"):
+            d.line([cx, cy - r1 - 22, cx, cy + 6], fill=INK, width=2)
+            d.text((cx, cy - r1 - 30), f'{c["majority"]} FOR A MAJORITY', font=sans("Bold", 15), fill=INK, anchor="ms")
+        lx, ly, LF = 32, h - 74, sans("SemiBold", 18)
+        for k, x in enumerate(c["items"]):
+            t_ = f'{x["label"]} {x["value"] if e > 0.95 else int(x["value"] * e)}'
+            if lx + 24 + d.textlength(t_, font=LF) > w - 24: lx, ly = 32, ly + 28     # wrap the legend
+            d.ellipse([lx, ly - 14, lx + 16, ly + 2], fill=cols[k % len(cols)])
+            d.text((lx + 24, ly), t_, font=LF, fill=INK, anchor="ls"); lx += d.textlength(t_, font=LF) + 44
+    if c.get("source"):
+        d.text((w - 24, h - 20), c["source"], font=sans("Regular", 15), fill=SOFT, anchor="rs")
+    return im
+
+def make_card(c, w, h, p=1.0):
+    """Key figure ("big" + "label", counting up while p < 1), quote, framing, or chart, on the panel paper."""
+    if c.get("kind") in ("bars", "seats"): return chart_card(c, w, h, p)
+    if p < 1 and c.get("kind") not in ("quote", "framing"): c = {**c, "big": counted(c.get("big"), p)}
     im = Image.new("RGB", (w, h), (239, 233, 222)); d = ImageDraw.Draw(im)
     if c.get("kind") == "framing":
         d.text((32, 46), "HOW OUTLETS HEADLINED IT", font=sans("Bold", 18), fill=ACC, anchor="ls")
@@ -659,6 +853,9 @@ def scenes():
     for i in range(N):
         if RADAR_IDX and i == RADAR_IDX[0]: out.append(("08a_radar", sc_radar))
         out.append((f"{i+2:02d}_story", (lambda i=i: sc_story(i))))
+        if i == DOC_I:
+            if DOC.get("timeline"): out.append((f"{i+2:02d}t_timeline", sc_timeline))
+            if DOC.get("clippings"): out.append((f"{i+2:02d}c_clips", sc_clips))
     return out + [("99_outro", sc_outro)]
 
 def encode(name, b, g):
@@ -681,12 +878,14 @@ if __name__ == "__main__":
                 states, sf, pin, dur, tk = b(); t = min(dur - 1.0, 2.0) if name == "00_sting" else dur - 1.0
                 Image.fromarray(frame(states, sf, pin, t, 9.0, dur, tk)).save(ED / "stills" / f"{name}.png")
         sys.exit()
-    g = 0.0; L = {}
+    g = 0.0; L = {}; EV = []
     for name, b in sc:
         f = SC / f"{name}.mp4"
         L[name] = encode(name, b, g) if not f.exists() else float(subprocess.check_output(
             ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(f)]))
+        EV += [(round(g + t, 3), k) for t, k in SFX.get(name, [])]
         g += L[name]; print(name, round(L[name], 2), flush=True)
+    json.dump({"events": EV, "scenes": L}, open(ED / f"sfx_events_{ARGS.audio}.json", "w"), indent=1)
     lst = SC / "list.txt"; lst.write_text("".join(f"file '{n}.mp4'\n" for n in L))
     alst = SC / "alist.txt"; parts = []
     for n, d in L.items():

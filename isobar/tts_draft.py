@@ -14,6 +14,10 @@ def scenes(script):
         if i == first_radar:
             out.append(("08a_radar", script["radar_bumper"]))
         out.append((f"{i+2:02d}_story", st["narration"]))
+        doc = script.get("doc") or {}
+        if doc.get("story") == st["id"]:        # the documentary slot follows its story
+            if doc.get("timeline"): out.append((f"{i+2:02d}t_timeline", doc["timeline"]["narration"]))
+            if doc.get("clippings"): out.append((f"{i+2:02d}c_clips", doc["clippings"]["narration"]))
     return out + [("99_outro", script["outro"]["narration"])]
 
 
