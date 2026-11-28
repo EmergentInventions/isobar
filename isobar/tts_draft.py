@@ -4,11 +4,15 @@ import argparse, json, os, re, subprocess, urllib.request
 from pathlib import Path
 
 
+SPEED = {"00_sting": 0.86}   # the show's name is read a little slower than the news
+
+
 def scenes(script):
     """Playback order. A cold open (if any) comes first; the Below the Radar bumper goes before the first radar story,
     wherever the script placed that block."""
     out = [("00_cold", script["cold_open"])] if script.get("cold_open") else []
-    out += [("00_sting", "Isobar News."), ("01_intro", script["intro"]["narration"])]
+    # the show's name is said once, straight after the cold open, slowly and with weight
+    out += [("00_sting", "This is Isobar News."), ("01_intro", script["intro"]["narration"])]
     first_radar = next((i for i, s in enumerate(script["stories"]) if s["segment"] == "radar"), None)
     for i, st in enumerate(script["stories"]):
         if i == first_radar:
@@ -171,7 +175,7 @@ def main():
             The timings drive captions and the bullet reveals."""
             parts, marks, pos, sr = [], [], 0.0, 24000
             for s in sentences(t):
-                audio, sr = k.create(to_phonemes(k, s, lex), voice=VOICE, speed=1.0, lang="en-gb", is_phonemes=True)
+                audio, sr = k.create(to_phonemes(k, s, lex), voice=VOICE, speed=SPEED.get(n, 1.0), lang="en-gb", is_phonemes=True)
                 if parts:
                     parts.append(np.zeros(int(GAP * sr), dtype=audio.dtype)); pos += GAP
                 marks.append([round(pos, 3), round(pos + len(audio) / sr, 3), s]); pos += len(audio) / sr

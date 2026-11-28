@@ -151,7 +151,7 @@ def build(ed: Path, audio: str, total: float):
         if part == "cold":
             x = drone(m)
         elif part == "sting":
-            x = np.zeros(m, dtype=np.float32); fx[int(t * SR):int(t * SR) + int(2.5 * SR)] += sfx("sting")[: n - int(t * SR)]
+            x = np.zeros(m, dtype=np.float32)            # no sting tone: the voice carries the show's name
         elif part == "radar":
             x = pad(m, t0, octave=1) * 0.8 + arps(m, t0, octave=3, every=2, gain=0.035)
         elif part == "outro":
@@ -171,12 +171,15 @@ def build(ed: Path, audio: str, total: float):
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("edition"); ap.add_argument("--video", required=True)
-    ap.add_argument("--audio", default="audio_draft"); a = ap.parse_args()
+    ap.add_argument("--audio", default="audio_draft"); ap.add_argument("--generated-bed", action="store_true")
+    a = ap.parse_args()
     ed = Path(a.edition); vid = ed / a.video; tmp = ed / "_mix"; tmp.mkdir(exist_ok=True)
     import soundfile as sf
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(vid), "-vn", "-ac", "1", "-ar", str(SR), str(tmp / "voice.wav")], check=True)
     voice, _ = sf.read(tmp / "voice.wav", dtype="float32"); total = len(voice) / SR
     bed, fx = build(ed, a.audio, total); bed, fx = bed[: len(voice)], fx[: len(voice)]
+    if not a.generated_bed:
+        bed[:] = 0          # the generated score is retired; a licensed track will replace it (see --track, to come)
     # levels: set the bed relative to the voice's speech level, then duck it under speech
     env = np.sqrt(np.maximum(lp(voice ** 2, 6), 0))
     speech = np.percentile(env[env > 1e-4], 70) if np.any(env > 1e-4) else 0.05

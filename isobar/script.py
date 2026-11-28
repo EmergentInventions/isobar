@@ -91,10 +91,11 @@ def est_minutes(texts):
 
 
 def intro_text(spoken, n_top, n_radar, n_all, minutes=None, teaser=None):
-    """Hook: promise (what you get, and how long), proof (how it was chosen), persona (who it's for), then a teaser.
+    """Follows "This is Isobar News." (said in the sting), so it never repeats the show's name.
+    Promise (what you get, how long, and that it saves scrolling), proof (how it was chosen), persona, then a teaser.
     The on-screen rundown of every headline is the plan."""
-    when = f"Today's news in under {words(minutes)} minutes. " if minutes else ""
-    t = (f"This is Isobar News for {spoken}. {when}The {words(n_top)} stories most widely covered across "
+    when = f"Today's news in under {words(minutes)} minutes, so you don't have to scroll for it. " if minutes else ""
+    t = (f"{spoken[0].upper()}{spoken[1:]}. {when}The {words(n_top)} stories most widely covered across "
          f"{words(n_all)} outlets, and {words(n_radar)} that got far less attention. "
          "Every claim attributed, no spin.")
     if teaser:
