@@ -19,10 +19,18 @@ Prefer different categories across the three. Do not pick stories about Anthropi
 Use only facts present in that story's `summary`, `points` and `headlines`. Never add facts.
 - `headline`: at most 70 characters, neutral, no adjectives of judgement, no question marks.
 - `facts`: exactly 3, each at most 90 characters, concrete (numbers, places, who did what).
-- `narration`: 90–150 words, spoken style, British English, attribute every claim to who made it
+- `narration`: 55–80 words, spoken style, British English, attribute every claim to who made it
   ("the ministry says", "according to the IEA"). No opinion, no speculation, no loaded words
   (e.g. "slammed", "shocking", "regime" unless quoting). Start straight into the story: no rank
   ("Second, ..."), no outlet count. The intro explains the ranking and the screen shows the numbers.
+- **No spectrum labels for parties or people** (host's rule): never write "far-right", "far-left", "hard-right",
+  "hard-left", "extreme right/left", "ultra-right", "radical left" or similar, in any field, even when the source
+  uses them (Kagi often does). Name the party or person ("Vox"). If its position matters, state the specific policy
+  from the sources instead ("Vox, which wants tougher immigration controls"). Only inside an attributed direct quote.
+- `next`: one or two sentences, at most 25 words: what happens next or who is affected (a date, a vote, a deadline,
+  a pending decision). Spoken after the narration and shown on screen as WHAT NEXT. Take it only from that story's
+  `context` (timeline, perspectives, qna and the other fields), attributed if it is someone's view. If the context has
+  nothing forward-looking, leave it out. Give every top story one if you can.
 - `category`: one or two words (e.g. "War in Ukraine", "Climate", "Energy", "Science").
 - `place`: "City, Country" if the story has a single location, otherwise null.
 - `countries`: when `place` is null, the countries the story is about, main one first, e.g.
@@ -35,11 +43,46 @@ Use only facts present in that story's `summary`, `points` and `headlines`. Neve
   Use only figures and quotes from that story's summary, points and headlines, attributed as the source does.
   Leave it out when nothing is worth a card.
 
+## 2b. Packaging and the shape of the show
+- `title_tags`: three tags of at most 22 characters for the three most-covered stories, e.g. "Kuwait drone strike",
+  "EU budget talks fail". Neutral, no judgement words. They make the title ("A, B, C + 7 more") and the thumbnail.
+- `cold_open`: two or three short sentences, at most 30 words, with the lead story's strongest facts, attributed.
+  It is the very first thing heard, before "This is Isobar News", so it must stand alone and be strictly factual.
+  Never invent drama: the edit and music supply the energy, the words stay neutral.
+- `teaser`: optional, one sentence pointing to the most interesting Below the Radar story
+  ("Below the radar today: ...").
+- `radar_after`: 3. Below the Radar plays after the third story (about three minutes in), then the remaining four
+  most-covered stories.
+
+## 2c. Documentary slot and charts
+- `doc`: once a day, for the lead story (or the top-3 story with the richest `context.timeline` and the most varied
+  `context.headlines`). It plays straight after that story, about 45 seconds:
+  - `timeline`: 3–5 dated `items` ({"date": "28 Feb 2026", "text": "at most 70 chars"}), only from `context.timeline`,
+    the last one being today's event, plus a spoken `narration` starting "How did we get here?" with one sentence per
+    item, in order.
+  - `clippings`: 4–6 `items` ({"outlet": "CNN", "headline": verbatim from `context.headlines`, "mark": the exact words
+    in that headline that show its framing}), outlets from different countries and leanings, chosen because their
+    framing differs (stated as fact vs "alleged", which side leads, what is left out). Spoken `narration` starting
+    "How was it reported?" that says only what the headlines say ("CNN said alleged. The South China Morning Post
+    led with Iran's denial."), no verdict; then that story's `next` sentence, which also goes in `clippings.next`.
+    Remove `next` from that story itself (it is spoken at the end of the clippings).
+  Leave `doc` out if no top-3 story has at least 3 timeline entries and 4 clearly different headlines.
+- `chart` (any story, optional, instead of `card`): when the story has comparable figures already in its facts or
+  narration. Never chart a number that is not in the story.
+  - bars: `{"kind": "bars", "title": "Final permitted polls", "unit": "%", "source": "...", "items": [{"label": "People's Party", "value": 31, "text": "~31%"}]}`
+    (for a range, `value` is the midpoint and `text` the range, e.g. "29–30%")
+  - seats: `{"kind": "seats", "title": "Seats in the 130-seat Parliament", "total": 130, "majority": 66, "source": "...", "items": [{"label": "...", "value": 65}]}`
+    (values must add up to `total`; list the governing side first)
+  Number cards (`"kind": "number"`) count up on screen automatically.
+
 ## 3. editorial.json shape
 ```json
 {
   "radar": [{"id": "<id from radar_pool>", "why": "<=110 chars"}, ...3],
-  "stories": {"<id>": {"headline": "", "facts": ["", "", ""], "narration": "", "category": "", "place": null, "countries": null, "card": null}},
+  "stories": {"<id>": {"headline": "", "facts": ["", "", ""], "narration": "", "next": "", "category": "", "place": null, "countries": null, "card": null, "chart": null}},
+  "title_tags": ["", "", ""], "cold_open": "", "teaser": "", "radar_after": 3,
+  "doc": {"story": "<id>", "timeline": {"narration": "", "items": [{"date": "", "text": ""}]},
+          "clippings": {"narration": "", "next": "", "items": [{"outlet": "", "headline": "", "mark": ""}]}},
   "notes": "anything the host should know (sensitive stories, close calls, Anthropic-related items)"
 }
 ```
@@ -63,7 +106,8 @@ If it is wrong for a British news reader (wrong stress, Anglicised foreign names
 ```json
 {"order": ["<id of story 1>", "...", "<id of story 10>"], "subjects": {"<id>": ["Hakeem Jeffries"], "<id>": ["Strait of Hormuz"]}}
 ```
-`order` is the on-screen order (the 7 in `top`, then your 3 picks). Up to 2 subjects per story, the main person
+`order` is the on-screen order: the first 3 in `top`, then your 3 picks, then the other 4 in `top`
+(so the contact sheet's numbers match the video's). Up to 2 subjects per story, the main person
 first, written as their full real name as Wikipedia would title it ("Fausto Isidro Meza Flores", not "El Chapo
 Isidro"; "Benjamin Netanyahu", not "Netanyahu"), because each subject is looked up on Wikidata first. Only:
 - named public figures in their public role (leaders, ministers, officials, executives, named athletes or campaigners);
