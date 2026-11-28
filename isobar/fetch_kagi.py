@@ -45,13 +45,22 @@ def story_record(s, category):
         "outlets": names,
         "outlet_count": len(names),
         "kagi_unique_domains": s.get("unique_domains"),
-        "context": context(s),
+        "context": safe_context(s),
     }
 
 
 CONTEXT_LISTS = ["perspectives", "timeline", "historical_background", "other_angles", "humanitarian_impact",
                  "international_reactions", "technical_details", "scientific_significance", "industry_impact",
                  "business_angle_points", "user_action_items", "did_you_know"]
+
+
+def safe_context(s):
+    """Context is extra: a surprise in Kagi's data must never stop the daily fetch."""
+    try:
+        return context(s)
+    except Exception as ex:
+        print("context skipped for", s.get("id"), repr(ex), flush=True)
+        return {}
 
 
 def context(s):
