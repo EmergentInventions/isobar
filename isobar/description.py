@@ -28,6 +28,9 @@ def main():
     if s.get("source") == "kagi":
         out.append("Attribution: story clustering and summaries adapted from Kagi News (https://news.kagi.com), licensed under "
                    "CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Isobar News has edited, re-ranked and rewritten the material for video.")
+    mj = ed.parent.parent / "assets" / "music" / "music.json"      # licensed music bed: its credit line, if it needs one
+    if mj.exists() and json.load(open(mj)).get("credit"):
+        out += ["", "Music: " + json.load(open(mj))["credit"]]
     (ed / "description.txt").write_text("\n".join(out) + "\n")
     print("description written")
 

@@ -24,7 +24,7 @@ BAR = 4 * BEAT
 A4 = 440.0
 # chords as semitones from A4 (A minor, F, C, G), voiced low
 CHORDS = [[-24, -12, -9, -5], [-28, -16, -12, -9], [-21, -9, -5, -2], [-26, -14, -10, -7]]
-LEVEL_DB = -16.0          # music relative to the voice's speech level, before ducking
+LEVEL_DB = -15.0          # music relative to the voice's speech level, before ducking
 DUCK = 0.5                # how far the bed dips under speech (0..1): about -6 dB
 
 
@@ -169,6 +169,30 @@ def build(ed: Path, audio: str, total: float):
     return bed, fx
 
 
+def track_bed(ed: Path, total: float):
+    """The licensed track, looped on bar lines to fill the video: the track's start (once), its loop body
+    (loop_start..loop_end) repeated, then its real ending (loop_end..end) so the final hit closes the video.
+    render.py snaps the last scene so the ending starts on a bar line. Short crossfades hide each join."""
+    import soundfile as sf
+    m = json.load(open(ed.parent.parent / "assets" / "music" / "music.json"))
+    src = ed.parent.parent / "assets" / "music" / m["file"]; wav = ed / "_mix" / "track.wav"
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(src), "-ac", "1", "-ar", str(SR), str(wav)], check=True)
+    x, _ = sf.read(wav, dtype="float32")
+    ls, le = int(m["loop_start"] * SR), int(m["loop_end"] * SR); n = int(total * SR)
+    tail = x[le:]; tail_at = max(0, n - len(tail))
+    out = np.zeros(n + SR, dtype=np.float32); xf = int(0.03 * SR); ramp = np.linspace(0, 1, xf, dtype=np.float32)
+    def put(seg, at):                       # every segment runs xf past its join, so joins truly overlap
+        seg = seg.copy()
+        if at > 0:
+            out[at:at + xf] *= 1 - ramp; seg[:xf] *= ramp
+        out[at:at + len(seg)] += seg[: len(out) - at]
+    put(x[:le + xf], 0); pos = le
+    while pos < tail_at:
+        put(x[ls:le + xf][: tail_at - pos + xf], pos); pos += le - ls
+    put(tail, tail_at)
+    return out[:n] * 10 ** (m.get("gain_db", 0) / 20)
+
+
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("edition"); ap.add_argument("--video", required=True)
     ap.add_argument("--audio", default="audio_draft"); ap.add_argument("--generated-bed", action="store_true")
@@ -178,8 +202,10 @@ def main():
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(vid), "-vn", "-ac", "1", "-ar", str(SR), str(tmp / "voice.wav")], check=True)
     voice, _ = sf.read(tmp / "voice.wav", dtype="float32"); total = len(voice) / SR
     bed, fx = build(ed, a.audio, total); bed, fx = bed[: len(voice)], fx[: len(voice)]
-    if not a.generated_bed:
-        bed[:] = 0          # the generated score is retired; a licensed track will replace it (see --track, to come)
+    if (ed.parent.parent / "assets" / "music" / "music.json").exists():
+        bed = track_bed(ed, total)[: len(voice)]
+    elif not a.generated_bed:
+        bed[:] = 0          # no licensed track configured and the generated score is retired: effects only
     # levels: set the bed relative to the voice's speech level, then duck it under speech
     env = np.sqrt(np.maximum(lp(voice ** 2, 6), 0))
     speech = np.percentile(env[env > 1e-4], 70) if np.any(env > 1e-4) else 0.05

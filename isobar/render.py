@@ -858,8 +858,27 @@ def scenes():
             if DOC.get("clippings"): out.append((f"{i+2:02d}c_clips", sc_clips))
     return out + [("99_outro", sc_outro)]
 
+def load_music():
+    """assets/music/music.json in the editions repo: the licensed bed and its beat grid (see isobar/music.py)."""
+    f = ED.parent.parent / "assets" / "music" / "music.json"
+    if not f.exists(): return None
+    m = json.load(open(f)); m["beat"] = 60.0 / m["bpm"]; m["bar"] = 4 * m["beat"]; return m
+MUSIC = load_music()
+
+def snap(name, g, dur):
+    """Cut on the beat: each scene ends on the music's next beat. The last scene ends where the track's own ending
+    (loop_end to the end of the file) finishes on a bar line, so the final hit lands as the video ends."""
+    if not MUSIC: return dur
+    end = g + dur; b = MUSIC["beat"]; t0 = MUSIC["first_beat"]
+    if name == "99_outro":
+        tail = MUSIC["duration"] - MUSIC["loop_end"]; bar = MUSIC["bar"]
+        k = math.ceil((end - tail - MUSIC["loop_start"]) / bar - 1e-6)
+        return MUSIC["loop_start"] + k * bar + tail - g
+    k = math.ceil((end - t0) / b - 1e-6); return t0 + k * b - g
+
 def encode(name, b, g):
-    states, sf, pin, dur, tk = b(); nf = int(round(dur * FPS)); tmp = str(SCENES_DIR / f"{name}.part.mp4")
+    states, sf, pin, dur, tk = b(); dur = snap(name, g, dur)
+    nf = int(round((g + dur) * FPS)) - int(round(g * FPS)); tmp = str(SCENES_DIR / f"{name}.part.mp4")
     p = subprocess.Popen(["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
                           "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", tmp], stdin=subprocess.PIPE)
     for f in range(nf):
