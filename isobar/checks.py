@@ -48,7 +48,9 @@ def run(ed: Path, audio: str):
         probs += [f"fact {k} is {len(f)} chars (max 90)" for k, f in enumerate(st["facts"], 1) if len(f) > 90]
         lo, hi = (55, 125) if (st.get("card") or {}).get("kind") == "framing" else (55, 105)
         if not lo <= wc <= hi: probs.append(f"spoken {wc} words ({lo}-{hi}, including 'what next')")
-        if st["segment"] == "top" and not st.get("next"): probs.append("no 'what next' line")
+        doc = s.get("doc") or {}
+        has_next = st.get("next") or (doc.get("story") == st["id"] and (doc.get("clippings") or {}).get("next"))
+        if st["segment"] == "top" and not has_next: probs.append("no 'what next' line")
         if re.search(r"\b(far|hard|extreme|ultra|radical)[- ](right|left)\b", n + " " + st["headline"] + " " + " ".join(st["facts"]), re.I):
             probs.append("spectrum label (far-right etc.): name the party and its policy instead")
         hits = [w for w in LOADED if re.search(rf"\b{re.escape(w)}\b", n + " " + st["headline"], re.I)]
